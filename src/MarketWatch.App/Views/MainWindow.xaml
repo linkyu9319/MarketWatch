@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         Title="MarketWatch 桌面盯盘助手"
+        Icon="pack://application:,,,/Assets/vegetable.png"
         Width="820"
         Height="530"
         MinWidth="680"
@@ -38,9 +39,16 @@
 
                 <!-- App Title, Version Update Pill & Connection Status below -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
-                    <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center">
-                        <TextBlock Text="MW" Foreground="White" FontWeight="Bold" FontSize="12.5"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border Width="34" Height="34" CornerRadius="8"
+                            Background="{DynamicResource ElevatedBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"
+                            Padding="4"
+                            Margin="0,0,10,0"
+                            VerticalAlignment="Center">
+                        <Image Source="pack://application:,,,/Assets/vegetable.png"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               Stretch="Uniform" />
                     </Border>
                     <StackPanel VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

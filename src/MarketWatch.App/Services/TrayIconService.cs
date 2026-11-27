@@ -53,6 +53,23 @@ public sealed class TrayIconService : IDisposable
 
     private static Icon CreateCrispAppIcon()
     {
+        try
+        {
+            var res = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/MarketWatch;component/Assets/vegetable.ico"));
+            if (res?.Stream is not null)
+            {
+                using (res.Stream)
+                {
+                    return new Icon(res.Stream, new Size(32, 32));
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to drawn icon if resource stream is unavailable
+        }
+
         using var bmp = new Bitmap(32, 32);
         using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;

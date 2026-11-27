@@ -30,6 +30,7 @@ public partial class MainWindow : Window
 
         _vm.IntradayChart.SeriesChanged += OnIntradaySeriesChanged;
         _themeManager.ThemeOrColorsChanged += OnThemeChanged;
+        _themeManager.ApplyToWindow(this);
 
         ConfigurePlotInteraction();
     }

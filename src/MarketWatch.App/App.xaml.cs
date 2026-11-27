@@ -227,23 +227,26 @@ public partial class App : System.Windows.Application
 
     private void OpenSearchDialog()
     {
-        if (_coordinator is null) return;
+        if (_services is null || _coordinator is null) return;
         var vm = new SearchDialogViewModel(_coordinator);
         var dlg = new SearchWindow(vm) { Owner = _mainWindow?.IsVisible == true ? _mainWindow : null };
+        _services.GetRequiredService<ThemeManager>().ApplyToWindow(dlg);
         dlg.ShowDialog();
     }
 
     private void OpenSettingsDialog()
     {
         if (_services is null || _coordinator is null) return;
+        var themeManager = _services.GetRequiredService<ThemeManager>();
         var vm = new SettingsViewModel(
             _coordinator,
-            _services.GetRequiredService<ThemeManager>(),
+            themeManager,
             _services.GetRequiredService<IAutoStartService>());
         vm.TestReminderRequested += TriggerTestReminder;
         vm.OpenUpdatesRequested += OpenUpdatesDialog;
 
         var dlg = new SettingsWindow(vm) { Owner = _mainWindow?.IsVisible == true ? _mainWindow : null };
+        themeManager.ApplyToWindow(dlg);
         dlg.ShowDialog();
     }
 
@@ -254,6 +257,7 @@ public partial class App : System.Windows.Application
         var tokenStore = _services.GetRequiredService<IGitHubTokenStore>();
         var vm = new UpdateDialogViewModel(updateSvc, tokenStore);
         var dlg = new UpdateWindow(vm) { Owner = _mainWindow?.IsVisible == true ? _mainWindow : null };
+        _services.GetRequiredService<ThemeManager>().ApplyToWindow(dlg);
 
         vm.ApplyUpdateAndRestartRequested += stagedPath =>
         {
@@ -278,17 +282,19 @@ public partial class App : System.Windows.Application
 
     private void OpenHistoryDialog()
     {
-        if (_coordinator is null) return;
+        if (_services is null || _coordinator is null) return;
         var vm = new HistoryViewModel(_coordinator);
         var dlg = new HistoryWindow(vm) { Owner = _mainWindow?.IsVisible == true ? _mainWindow : null };
+        _services.GetRequiredService<ThemeManager>().ApplyToWindow(dlg);
         dlg.ShowDialog();
     }
 
     private void OpenQuickPriceAlertDialog(Instrument instrument)
     {
-        if (_coordinator is null) return;
+        if (_services is null || _coordinator is null) return;
         var quote = _coordinator.GetLatestQuote(instrument.Id);
         var dlg = new PriceAlertDialog(instrument, quote) { Owner = _mainWindow?.IsVisible == true ? _mainWindow : null };
+        _services.GetRequiredService<ThemeManager>().ApplyToWindow(dlg);
         if (dlg.ShowDialog() == true && dlg.CreatedRule is not null)
         {
             var rule = dlg.CreatedRule;

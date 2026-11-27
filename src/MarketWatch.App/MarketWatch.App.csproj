@@ -7,9 +7,14 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <RootNamespace>MarketWatch.App</RootNamespace>
     <AssemblyName>MarketWatch</AssemblyName>
+    <ApplicationIcon>Assets\vegetable.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\vegetable.png" />
+    <Resource Include="Assets\vegetable.ico" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MarketWatch.Core\MarketWatch.Core.csproj" />
     <ProjectReference Include="..\MarketWatch.Infrastructure\MarketWatch.Infrastructure.csproj" />
