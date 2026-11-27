@@ -19,12 +19,14 @@ public sealed class AppStateCoordinator : IDisposable
     private readonly ISettingsStore _settingsStore;
     private readonly IAlertHistoryStore _historyStore;
     private readonly IAutoStartService _autoStartService;
+    private readonly ISessionStateProvider _sessionState;
     private readonly IAppLogger _logger;
     private readonly ReminderScheduler _scheduler;
     private readonly PriceAlertEvaluator _priceAlertEvaluator;
 
     private readonly ConcurrentDictionary<InstrumentId, Quote> _latestQuotes = new();
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly SemaphoreSlim _schedulerGate = new(1, 1);
     private readonly object _settingsLock = new();
 
     private AppSettings _settings = DefaultPresets.CreateDefaultSettings();
@@ -57,6 +59,7 @@ public sealed class AppStateCoordinator : IDisposable
         ISettingsStore settingsStore,
         IAlertHistoryStore historyStore,
         IAutoStartService autoStartService,
+        ISessionStateProvider sessionState,
         IAppLogger logger)
     {
         _clock = clock;
@@ -65,9 +68,21 @@ public sealed class AppStateCoordinator : IDisposable
         _settingsStore = settingsStore;
         _historyStore = historyStore;
         _autoStartService = autoStartService;
+        _sessionState = sessionState;
         _logger = logger;
         _scheduler = new ReminderScheduler(clock, calendar);
         _priceAlertEvaluator = new PriceAlertEvaluator();
+
+        _sessionState.SessionUnlocked += OnSessionUnlocked;
+    }
+
+    private void OnSessionUnlocked()
+    {
+        _ = Task.Run(async () =>
+        {
+            await TriggerImmediateSchedulerCheckAsync().ConfigureAwait(false);
+            await RefreshQuotesAsync(forceResetBackoff: false).ConfigureAwait(false);
+        });
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -84,10 +99,13 @@ public sealed class AppStateCoordinator : IDisposable
 
         ApplySettingsSideEffects(Settings);
 
+        var dedupKeys = await _historyStore.LoadDedupKeysAsync(cancellationToken).ConfigureAwait(false);
+        _scheduler.SeedDedupKeys(dedupKeys);
+
         var history = await _historyStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         _scheduler.SeedFromHistory(history.ReminderRecords);
 
-        _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items, {Settings.ReminderRules.Count} reminder rules.");
+        _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items, {Settings.ReminderRules.Count} reminder rules, {dedupKeys.Count} dedup keys.");
     }
 
     public void StartBackgroundLoops()
@@ -132,37 +150,57 @@ public sealed class AppStateCoordinator : IDisposable
         }
     }
 
+    public Task TriggerImmediateSchedulerCheckAsync(CancellationToken ct = default) =>
+        EvaluateSchedulerSafeAsync(ct);
+
     private async Task EvaluateSchedulerSafeAsync(CancellationToken ct)
     {
-        List<ReminderRule> rulesSnapshot;
-        lock (_settingsLock)
+        await _schedulerGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            rulesSnapshot = _settings.ReminderRules.Select(r => r.Clone()).ToList();
-        }
-
-        var tick = _scheduler.EvaluateTick(rulesSnapshot);
-
-        foreach (var rec in tick.RecordsToPersist)
-        {
-            try
+            List<ReminderRule> rulesSnapshot;
+            lock (_settingsLock)
             {
-                await _historyStore.AppendReminderRecordAsync(rec, ct).ConfigureAwait(false);
+                rulesSnapshot = _settings.ReminderRules.Select(r => r.Clone()).ToList();
             }
-            catch (Exception ex)
+
+            var tick = _scheduler.EvaluateTick(rulesSnapshot, _sessionState.IsSessionLocked);
+
+            if (tick.RecordsToPersist.Count > 0)
             {
-                _logger.Warn("History", $"Failed persisting reminder record: {ex.Message}");
+                try
+                {
+                    await _historyStore.RecordDedupKeysAsync(tick.RecordsToPersist, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn("History", $"Failed persisting dedup keys: {ex.Message}");
+                }
+
+                foreach (var rec in tick.RecordsToPersist)
+                {
+                    try
+                    {
+                        await _historyStore.AppendReminderRecordAsync(rec, ct).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warn("History", $"Failed persisting reminder record: {ex.Message}");
+                    }
+                }
+
+                HistoryUpdated?.Invoke();
+            }
+
+            foreach (var ev in tick.PopupsToShow)
+            {
+                _logger.Info("Scheduler", $"Triggering reminder popup: {ev.Rule.Name} ({ev.ScheduledTime:HH:mm}, catchUp={ev.IsCatchUp}, snooze={ev.IsSnoozedFollowUp})");
+                ReminderDue?.Invoke(ev);
             }
         }
-
-        if (tick.RecordsToPersist.Count > 0)
+        finally
         {
-            HistoryUpdated?.Invoke();
-        }
-
-        foreach (var ev in tick.PopupsToShow)
-        {
-            _logger.Info("Scheduler", $"Triggering reminder popup: {ev.Rule.Name} ({ev.ScheduledTime:HH:mm}, catchUp={ev.IsCatchUp}, snooze={ev.IsSnoozedFollowUp})");
-            ReminderDue?.Invoke(ev);
+            _schedulerGate.Release();
         }
     }
 
@@ -211,19 +249,19 @@ public sealed class AppStateCoordinator : IDisposable
                 agg.ResetBackoff();
             }
 
-            List<Instrument> watchlistSnapshot;
+            List<Instrument> fetchList;
             List<PriceAlertRule> alertRulesSnapshot;
             int intervalSec;
             lock (_settingsLock)
             {
-                watchlistSnapshot = _settings.Watchlist.Select(i => i.Clone()).ToList();
+                fetchList = BuildRequiredInstrumentsLocked();
                 alertRulesSnapshot = _settings.PriceAlerts.Select(a => a.Clone()).ToList();
                 intervalSec = _settings.RefreshIntervalSeconds;
             }
 
             _nextQuotePollUtc = _clock.UtcNow.AddSeconds(Math.Clamp(intervalSec, 5, 60));
 
-            var response = await _aggregator.GetQuotesAsync(watchlistSnapshot, cancellationToken).ConfigureAwait(false);
+            var response = await _aggregator.GetQuotesAsync(fetchList, cancellationToken).ConfigureAwait(false);
 
             foreach (var (id, quote) in response.Quotes)
             {
@@ -408,8 +446,51 @@ public sealed class AppStateCoordinator : IDisposable
         _calendar.UpdateCustomOverrides(s.CustomHolidayDates, s.CustomOpenDates);
     }
 
+    private List<Instrument> BuildRequiredInstrumentsLocked()
+    {
+        var byId = new Dictionary<InstrumentId, Instrument>();
+        foreach (var w in _settings.Watchlist)
+        {
+            byId[w.Id] = w.Clone();
+        }
+
+        var catalog = DefaultPresets.CreateFullCatalog();
+
+        // Keep polling instruments referenced by enabled reminder rules even if removed from Watchlist
+        foreach (var rule in _settings.ReminderRules.Where(r => r.IsEnabled && r.TargetInstrumentId.HasValue))
+        {
+            var id = rule.TargetInstrumentId!.Value;
+            if (!byId.ContainsKey(id))
+            {
+                var known = catalog.FirstOrDefault(c => c.Id == id);
+                byId[id] = known?.Clone() ?? CreateFallbackInstrument(id, id.Code);
+            }
+        }
+
+        // Keep polling instruments referenced by enabled price alert rules even if removed from Watchlist
+        foreach (var alert in _settings.PriceAlerts.Where(a => a.IsEnabled))
+        {
+            if (!byId.ContainsKey(alert.InstrumentId))
+            {
+                var known = catalog.FirstOrDefault(c => c.Id == alert.InstrumentId);
+                byId[alert.InstrumentId] = known?.Clone() ?? CreateFallbackInstrument(alert.InstrumentId, alert.InstrumentName);
+            }
+        }
+
+        return byId.Values.ToList();
+    }
+
+    private static Instrument CreateFallbackInstrument(InstrumentId id, string? name) => new()
+    {
+        Id = id,
+        Name = string.IsNullOrWhiteSpace(name) ? id.Code : name,
+        DisplayCode = id.Code,
+        Currency = ChinaTimeHelper.GetDefaultCurrency(id.Market)
+    };
+
     public void Dispose()
     {
+        _sessionState.SessionUnlocked -= OnSessionUnlocked;
         try
         {
             _loopCts?.Cancel();
@@ -417,5 +498,6 @@ public sealed class AppStateCoordinator : IDisposable
         }
         catch { }
         _refreshGate.Dispose();
+        _schedulerGate.Dispose();
     }
 }

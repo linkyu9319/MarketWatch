@@ -56,15 +56,12 @@ public partial class App : System.Windows.Application
             themeManager.Apply(_coordinator.Settings.ThemeMode, _coordinator.Settings.ColorScheme);
 
             var mainVm = _services.GetRequiredService<MainViewModel>();
-            _mainWindow = new MainWindow(mainVm, _coordinator, themeManager);
-            MainWindow = _mainWindow;
-
             WireUiEvents(mainVm);
             SetupTrayIcon();
 
             _singleInstance.ActivationRequested += () =>
             {
-                Dispatcher.BeginInvoke(() => _mainWindow?.RestoreAndFocus());
+                Dispatcher.BeginInvoke(ShowOrRecreateMainWindow);
             };
 
             _coordinator.ReminderDue += ev => _reminderPresenter.ShowScheduledReminder(ev);
@@ -75,7 +72,7 @@ public partial class App : System.Windows.Application
             var startMinimized = e.Args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
             if (!startMinimized)
             {
-                _mainWindow.Show();
+                ShowOrRecreateMainWindow();
             }
 
             if (_coordinator.Settings.MiniWindowVisible)
@@ -110,6 +107,7 @@ public partial class App : System.Windows.Application
         sc.AddSingleton<ISettingsStore, JsonSettingsStore>();
         sc.AddSingleton<IAlertHistoryStore, JsonHistoryStore>();
         sc.AddSingleton<IAutoStartService, WindowsAutoStartService>();
+        sc.AddSingleton<ISessionStateProvider, WindowsSessionStateProvider>();
         sc.AddSingleton<IGitHubTokenStore, DpapiGitHubTokenStore>();
         sc.AddSingleton<IAppUpdateService, GitHubUpdateService>();
 
@@ -152,13 +150,30 @@ public partial class App : System.Windows.Application
     private void SetupTrayIcon()
     {
         _trayService = new TrayIconService();
-        _trayService.OpenMainRequested += () => Dispatcher.BeginInvoke(() => _mainWindow?.RestoreAndFocus());
+        _trayService.OpenMainRequested += () => Dispatcher.BeginInvoke(ShowOrRecreateMainWindow);
         _trayService.ToggleMiniWindowRequested += () => Dispatcher.BeginInvoke(ToggleMiniWindow);
         _trayService.TestNormalReminderRequested += () => Dispatcher.BeginInvoke(() => TriggerTestReminder(ReminderStrength.Normal));
         _trayService.TestStrongReminderRequested += () => Dispatcher.BeginInvoke(() => TriggerTestReminder(ReminderStrength.Strong));
         _trayService.OpenUpdatesRequested += () => Dispatcher.BeginInvoke(OpenUpdatesDialog);
         _trayService.OpenSettingsRequested += () => Dispatcher.BeginInvoke(OpenSettingsDialog);
         _trayService.ExitRequested += () => Dispatcher.BeginInvoke(ExitApplication);
+    }
+
+    private void ShowOrRecreateMainWindow()
+    {
+        if (_services is null || _coordinator is null)
+            return;
+
+        if (_mainWindow is null)
+        {
+            var mainVm = _services.GetRequiredService<MainViewModel>();
+            var themeManager = _services.GetRequiredService<ThemeManager>();
+            _mainWindow = new MainWindow(mainVm, _coordinator, themeManager);
+            _mainWindow.Closed += (_, _) => _mainWindow = null;
+            MainWindow = _mainWindow;
+        }
+
+        _mainWindow.RestoreAndFocus();
     }
 
     private void UpdateTraySummary(BatchQuoteResponse? resp)
@@ -293,7 +308,7 @@ public partial class App : System.Windows.Application
         {
             var miniVm = _services.GetRequiredService<MiniWindowViewModel>();
             _miniWindow = new MiniFloatingWindow(miniVm, _coordinator);
-            _miniWindow.OpenMainRequested += () => _mainWindow?.RestoreAndFocus();
+            _miniWindow.OpenMainRequested += ShowOrRecreateMainWindow;
             _miniWindow.HideRequested += () =>
             {
                 _miniWindow.Hide();
@@ -326,14 +341,16 @@ public partial class App : System.Windows.Application
     {
         if (e.Mode == PowerModes.Resume)
         {
-            _logger?.Info("Power", "System resumed from sleep; triggering immediate quote refresh.");
+            _logger?.Info("Power", "System resumed from sleep; triggering immediate scheduler check and quote refresh.");
+            _ = _coordinator?.TriggerImmediateSchedulerCheckAsync();
             _ = _coordinator?.RefreshQuotesAsync(forceResetBackoff: true);
         }
     }
 
     private void OnSystemTimeChanged(object? sender, EventArgs e)
     {
-        _logger?.Info("Clock", "System time change detected; scheduler will re-evaluate on next tick.");
+        _logger?.Info("Clock", "System time change detected; triggering immediate scheduler evaluation.");
+        _ = _coordinator?.TriggerImmediateSchedulerCheckAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -60,6 +60,34 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Contains(new DateOnly(2026, 12, 25), imported.CustomHolidayDates);
     }
 
+    [Fact]
+    public async Task HistoryClear_PreservesRestartDeduplicationState()
+    {
+        var historyStore = new JsonHistoryStore(new NullLogger(), _tempDir);
+        var rec = new ReminderTriggerRecord
+        {
+            TriggerKey = "hstech-1430|2026-11-27|14:30",
+            RuleId = "hstech-1430",
+            RuleName = "恒生科技基金交易提醒",
+            BusinessDate = new DateOnly(2026, 11, 27),
+            ScheduledTime = new TimeOnly(14, 30),
+            TriggeredAt = DateTimeOffset.UtcNow,
+            Status = ReminderTriggerStatus.Triggered
+        };
+
+        await historyStore.RecordDedupKeysAsync([rec]);
+        await historyStore.AppendReminderRecordAsync(rec);
+
+        // User clears visible history
+        await historyStore.ClearAsync();
+        var visible = await historyStore.LoadAsync();
+        Assert.Empty(visible.ReminderRecords);
+
+        // Independent dedup keys MUST survive restart!
+        var dedupKeys = await historyStore.LoadDedupKeysAsync();
+        Assert.Contains(rec.TriggerKey, dedupKeys);
+    }
+
     public void Dispose()
     {
         try

@@ -157,6 +157,13 @@ public partial class MainWindow : Window
         }
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        _vm.IntradayChart.SeriesChanged -= OnIntradaySeriesChanged;
+        _themeManager.ThemeOrColorsChanged -= OnThemeChanged;
+        base.OnClosed(e);
+    }
+
     public void RestoreAndFocus()
     {
         Show();

@@ -196,10 +196,24 @@ public sealed partial class SettingsViewModel : ObservableObject
         AvailableInstruments.Clear();
         TargetInstrumentOptions.Clear();
         TargetInstrumentOptions.Add(new TargetInstrumentOption("", "不关联特定标的"));
+        var seenOptionKeys = new HashSet<string>(StringComparer.Ordinal) { "" };
         foreach (var w in s.Watchlist)
         {
             AvailableInstruments.Add(w);
-            TargetInstrumentOptions.Add(new TargetInstrumentOption(w.Id.CanonicalKey, $"{w.Name} ({w.DisplayCode})"));
+            if (seenOptionKeys.Add(w.Id.CanonicalKey))
+                TargetInstrumentOptions.Add(new TargetInstrumentOption(w.Id.CanonicalKey, $"{w.Name} ({w.DisplayCode})"));
+        }
+        // Preserve target options for existing reminder rules even if the instrument was removed from Watchlist
+        var catalog = DefaultPresets.CreateFullCatalog();
+        foreach (var r in s.ReminderRules.Where(x => x.TargetInstrumentId.HasValue))
+        {
+            var id = r.TargetInstrumentId!.Value;
+            if (seenOptionKeys.Add(id.CanonicalKey))
+            {
+                var known = catalog.FirstOrDefault(c => c.Id == id);
+                var label = known is not null ? $"{known.Name} ({known.DisplayCode}) [未在自选]" : $"{id.Code} [未在自选]";
+                TargetInstrumentOptions.Add(new TargetInstrumentOption(id.CanonicalKey, label));
+            }
         }
         NewAlertInstrument = AvailableInstruments.FirstOrDefault();
 
@@ -409,6 +423,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         try
         {
+            var builtRules = ReminderRules.Select(r => r.ToModel(EnableFullScreenOverlayForStrong, EnableReminderSound)).ToList();
+            foreach (var rule in builtRules)
+            {
+                if (rule.TriggerTime >= rule.CutoffTime)
+                {
+                    StatusMessage = $"提醒规则「{rule.Name}」的触发时间 ({rule.TriggerTime:HH:mm}) 必须早于截止时间 ({rule.CutoffTime:HH:mm})，请调整后再保存。";
+                    return;
+                }
+            }
+
             var holidays = CustomHolidayDates
                 .Select(x => DateOnly.ParseExact(x, "yyyy-MM-dd", CultureInfo.InvariantCulture))
                 .ToList();
@@ -433,7 +457,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 s.AutoStartEnabled = AutoStartEnabled;
                 s.DefaultCalendarMode = DefaultCalendarMode;
                 s.MiniWindowOpacity = Math.Clamp(MiniWindowOpacity, 0.55, 1.0);
-                s.ReminderRules = ReminderRules.Select(r => r.ToModel(EnableFullScreenOverlayForStrong, EnableReminderSound)).ToList();
+                s.ReminderRules = builtRules;
                 s.PriceAlerts = PriceAlerts.Select(a => a.ToModel()).ToList();
                 s.CustomHolidayDates = holidays;
                 s.CustomOpenDates = openDays;

@@ -112,6 +112,22 @@ public sealed class ProviderParsingTests
         Assert.Equal(DelayStatus.Stale, stale.DelayStatus);
         Assert.Equal(originalQuoteTime, stale.QuoteTime); // Never faked with ReceivedAt!
         Assert.NotNull(stale.Error);
+
+        // Call 3: While BOTH providers are in backoff (2s later), MUST NOT hammer either provider!
+        var primaryCallsBefore = primary.CallCount;
+        var backupCallsBefore = backup.CallCount;
+        clock.Advance(TimeSpan.FromSeconds(2));
+        var r3 = await agg.GetQuotesAsync([hstech]);
+        Assert.Equal(primaryCallsBefore, primary.CallCount);
+        Assert.Equal(backupCallsBefore, backup.CallCount);
+        Assert.Contains("退避等待中", r3.OverallWarning);
+
+        // Call 4: After backoff expires (65s later), retries cleanly
+        backup.ShouldFail = false;
+        clock.Advance(TimeSpan.FromSeconds(65));
+        var r4 = await agg.GetQuotesAsync([hstech]);
+        Assert.True(r4.AnyFreshData);
+        Assert.True(backup.CallCount > backupCallsBefore);
     }
 
     [Fact]
@@ -176,6 +192,7 @@ public sealed class ProviderParsingTests
     {
         public string Name { get; }
         public bool ShouldFail { get; set; }
+        public int CallCount { get; private set; }
         private readonly decimal? _price;
 
         public ProviderCapabilities Capabilities => ProviderCapabilities.BatchQuotes;
@@ -189,6 +206,7 @@ public sealed class ProviderParsingTests
 
         public Task<IReadOnlyDictionary<InstrumentId, Quote>> GetQuotesAsync(IReadOnlyList<Instrument> instruments, CancellationToken cancellationToken = default)
         {
+            CallCount++;
             if (ShouldFail)
                 throw new HttpRequestException("Simulated outage");
 

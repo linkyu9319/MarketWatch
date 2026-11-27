@@ -58,6 +58,20 @@ public sealed class ReminderScheduler
         }
     }
 
+    public void SeedDedupKeys(IEnumerable<string> keys)
+    {
+        lock (_sync)
+        {
+            foreach (var key in keys)
+            {
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    _processedTriggerKeys.Add(key);
+                }
+            }
+        }
+    }
+
     public void ScheduleSnooze(ReminderRule rule, DateOnly businessDate, TimeSpan delay)
     {
         lock (_sync)
@@ -67,10 +81,17 @@ public sealed class ReminderScheduler
         }
     }
 
-    public SchedulerTickResult EvaluateTick(IReadOnlyList<ReminderRule> rules)
+    public SchedulerTickResult EvaluateTick(IReadOnlyList<ReminderRule> rules, bool isSessionLocked = false)
     {
         lock (_sync)
         {
+            // While desktop is locked, defer evaluation so rules are not prematurely marked triggered
+            // on an unseen lock screen; unlocking will immediately run catch-up or post-cutoff miss logic.
+            if (isSessionLocked)
+            {
+                return new SchedulerTickResult(Array.Empty<ScheduledReminderEvent>(), Array.Empty<ReminderTriggerRecord>());
+            }
+
             var utcNow = _clock.UtcNow;
             var chinaNow = ChinaTimeHelper.ToChinaTime(utcNow);
             var today = DateOnly.FromDateTime(chinaNow.DateTime);
@@ -79,7 +100,7 @@ public sealed class ReminderScheduler
             var popups = new List<ScheduledReminderEvent>();
             var records = new List<ReminderTriggerRecord>();
 
-            // 1. Evaluate matured snoozes
+            // 1. Evaluate matured snoozes (if already past cutoff, record miss only and NEVER show stale order popup)
             for (var i = _pendingSnoozes.Count - 1; i >= 0; i--)
             {
                 var snooze = _pendingSnoozes[i];
@@ -89,29 +110,46 @@ public sealed class ReminderScheduler
                     var isAfterCutoff = today > snooze.BusinessDate || nowTime >= snooze.Rule.CutoffTime;
                     var snoozeKey = $"{snooze.Rule.Id}|{snooze.BusinessDate:yyyy-MM-dd}|SNOOZE|{utcNow.ToUnixTimeSeconds()}";
 
-                    popups.Add(new ScheduledReminderEvent
+                    if (isAfterCutoff)
                     {
-                        Rule = snooze.Rule,
-                        TriggerKey = snoozeKey,
-                        BusinessDate = snooze.BusinessDate,
-                        ScheduledTime = snooze.Rule.TriggerTime,
-                        IsCatchUp = false,
-                        IsSnoozedFollowUp = true,
-                        IsTest = false,
-                        IsAfterCutoff = isAfterCutoff
-                    });
+                        records.Add(new ReminderTriggerRecord
+                        {
+                            TriggerKey = snoozeKey,
+                            RuleId = snooze.Rule.Id,
+                            RuleName = snooze.Rule.Name,
+                            BusinessDate = snooze.BusinessDate,
+                            ScheduledTime = snooze.Rule.TriggerTime,
+                            TriggeredAt = chinaNow,
+                            Status = ReminderTriggerStatus.MissedAfterCutoff,
+                            Note = $"稍后提醒到期时已超过当日截止时间 {snooze.Rule.CutoffTime:HH:mm}，仅记录错过，不弹出过时下单提示"
+                        });
+                    }
+                    else
+                    {
+                        popups.Add(new ScheduledReminderEvent
+                        {
+                            Rule = snooze.Rule,
+                            TriggerKey = snoozeKey,
+                            BusinessDate = snooze.BusinessDate,
+                            ScheduledTime = snooze.Rule.TriggerTime,
+                            IsCatchUp = false,
+                            IsSnoozedFollowUp = true,
+                            IsTest = false,
+                            IsAfterCutoff = false
+                        });
 
-                    records.Add(new ReminderTriggerRecord
-                    {
-                        TriggerKey = snoozeKey,
-                        RuleId = snooze.Rule.Id,
-                        RuleName = snooze.Rule.Name,
-                        BusinessDate = snooze.BusinessDate,
-                        ScheduledTime = snooze.Rule.TriggerTime,
-                        TriggeredAt = chinaNow,
-                        Status = ReminderTriggerStatus.Snoozed,
-                        Note = isAfterCutoff ? "稍后提醒到期（已过当日截止时间）" : "稍后提醒（1分钟）再次弹出"
-                    });
+                        records.Add(new ReminderTriggerRecord
+                        {
+                            TriggerKey = snoozeKey,
+                            RuleId = snooze.Rule.Id,
+                            RuleName = snooze.Rule.Name,
+                            BusinessDate = snooze.BusinessDate,
+                            ScheduledTime = snooze.Rule.TriggerTime,
+                            TriggeredAt = chinaNow,
+                            Status = ReminderTriggerStatus.Snoozed,
+                            Note = "稍后提醒（1分钟）再次弹出"
+                        });
+                    }
                 }
             }
 

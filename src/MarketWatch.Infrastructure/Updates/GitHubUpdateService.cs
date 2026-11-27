@@ -258,7 +258,8 @@ public sealed class GitHubUpdateService : IAppUpdateService, IDisposable
         Directory.CreateDirectory(_updatesDirectory);
         var scriptPath = Path.Combine(_updatesDirectory, "apply-update.ps1");
 
-        // Clean PowerShell self-updater script: waits for current PID exit, backs up old EXE, replaces atomically, restarts new EXE
+        // Safe PowerShell self-updater: waits for old PID exit, swaps in staged EXE, verifies new process stays healthy,
+        // and automatically rolls back to the working backup EXE if the new binary crashes on startup.
         var script = """
 param(
     [Parameter(Mandatory=$true)][int]$TargetPid,
@@ -272,16 +273,43 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 Start-Sleep -Milliseconds 500
 $backupExe = "$TargetExe.bak"
+$failedExe = "$TargetExe.failed"
 if (Test-Path $backupExe) { Remove-Item $backupExe -Force -ErrorAction SilentlyContinue }
+if (Test-Path $failedExe) { Remove-Item $failedExe -Force -ErrorAction SilentlyContinue }
 if (Test-Path $TargetExe) { Move-Item -Path $TargetExe -Destination $backupExe -Force }
+
+$rolledBack = $false
 try {
     Move-Item -Path $StagedExe -Destination $TargetExe -Force
-    Start-Process -FilePath $TargetExe
-    Start-Sleep -Milliseconds 1200
-    if (Test-Path $backupExe) { Remove-Item $backupExe -Force -ErrorAction SilentlyContinue }
+    $proc = Start-Process -FilePath $TargetExe -PassThru
+    $crashed = $false
+    for ($check = 0; $check -lt 7; $check++) {
+        Start-Sleep -Milliseconds 500
+        $proc.Refresh()
+        if ($proc.HasExited) {
+            if ($proc.ExitCode -ne 0) {
+                $crashed = $true
+            }
+            break
+        }
+    }
+
+    if ($crashed) {
+        if (Test-Path $TargetExe) { Move-Item -Path $TargetExe -Destination $failedExe -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $backupExe) {
+            Move-Item -Path $backupExe -Destination $TargetExe -Force
+            Start-Process -FilePath $TargetExe
+            $rolledBack = $true
+        }
+    } else {
+        # New version stayed healthy (or exited cleanly with 0); safe to remove backup
+        if (Test-Path $backupExe) { Remove-Item $backupExe -Force -ErrorAction SilentlyContinue }
+    }
 } catch {
-    if ((Test-Path $backupExe) -and -not (Test-Path $TargetExe)) {
+    if (-not $rolledBack -and (Test-Path $backupExe)) {
+        if (Test-Path $TargetExe) { Move-Item -Path $TargetExe -Destination $failedExe -Force -ErrorAction SilentlyContinue }
         Move-Item -Path $backupExe -Destination $TargetExe -Force
+        Start-Process -FilePath $TargetExe -ErrorAction SilentlyContinue
     }
     throw
 }

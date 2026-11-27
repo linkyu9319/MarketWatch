@@ -96,4 +96,53 @@ public sealed class PriceAlertEvaluatorTests
         var staleReceived = MakeQuote(3550, 2m, t1.AddMinutes(-5));
         Assert.Empty(eval.Evaluate([rule], new Dictionary<InstrumentId, Quote> { [rule.InstrumentId] = staleReceived }, t1));
     }
+
+    [Fact]
+    public void ProviderFailover_OutOfOrderOlderQuoteTime_NeverTriggersFalseCrossing()
+    {
+        var eval = new PriceAlertEvaluator();
+        var rule = new PriceAlertRule
+        {
+            Id = "r-order",
+            InstrumentId = DefaultPresets.HstechId,
+            InstrumentName = "恒生科技指数",
+            Metric = AlertMetric.ChangePercent,
+            Direction = AlertDirection.CrossBelow,
+            Threshold = 0.5m,
+            CooldownMinutes = 1,
+            IsEnabled = true
+        };
+
+        var t0 = new DateTimeOffset(2026, 11, 27, 1, 35, 0, TimeSpan.Zero); // 09:35 CST
+        // Fresh near-realtime Eastmoney tick: QuoteTime 09:34:55, +1.2%
+        var qNew = new Quote
+        {
+            InstrumentId = DefaultPresets.HstechId,
+            Name = "恒生科技指数",
+            LastPrice = 3460m,
+            ChangePercent = 1.2m,
+            QuoteTime = t0.AddSeconds(-5),
+            ReceivedAt = t0,
+            Source = "Eastmoney",
+            MarketStatus = MarketStatus.Trading,
+            DelayStatus = DelayStatus.NearRealtime
+        };
+        Assert.Empty(eval.Evaluate([rule], new Dictionary<InstrumentId, Quote> { [rule.InstrumentId] = qNew }, t0));
+
+        // 10 seconds later, failover to delayed Tencent tick with OLDER QuoteTime (09:20:00, 15 min behind), 0.0%
+        var t1 = t0.AddSeconds(10);
+        var qOlder = new Quote
+        {
+            InstrumentId = DefaultPresets.HstechId,
+            Name = "恒生科技指数",
+            LastPrice = 3417m,
+            ChangePercent = 0.0m,
+            QuoteTime = t0.AddMinutes(-15),
+            ReceivedAt = t1,
+            Source = "Tencent",
+            MarketStatus = MarketStatus.Trading,
+            DelayStatus = DelayStatus.Delayed
+        };
+        Assert.Empty(eval.Evaluate([rule], new Dictionary<InstrumentId, Quote> { [rule.InstrumentId] = qOlder }, t1));
+    }
 }

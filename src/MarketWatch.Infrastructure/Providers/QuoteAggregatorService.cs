@@ -56,6 +56,7 @@ public sealed class QuoteAggregatorService : IQuoteAggregator
         var pending = instruments.ToList();
         var usedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var errors = new List<string>();
+        var skippedBackoffSeconds = new List<double>();
         var now = _clock.UtcNow;
 
         foreach (var provider in orderedProviders)
@@ -66,12 +67,12 @@ public sealed class QuoteAggregatorService : IQuoteAggregator
             if (!provider.Capabilities.HasFlag(ProviderCapabilities.BatchQuotes))
                 continue;
 
-            if (IsInBackoff(provider.Name, now))
+            // Strictly respect exponential backoff even when ALL providers are in backoff;
+            // only explicit manual refresh (ResetBackoff) bypasses the backoff timer.
+            if (TryGetRemainingBackoffSeconds(provider.Name, now, out var remainingSec))
             {
-                // Still allow fallback if all other providers are also in backoff
-                var anyOtherAvailable = orderedProviders.Any(p => p.Name != provider.Name && !IsInBackoff(p.Name, now));
-                if (anyOtherAvailable)
-                    continue;
+                skippedBackoffSeconds.Add(remainingSec);
+                continue;
             }
 
             try
@@ -164,9 +165,24 @@ public sealed class QuoteAggregatorService : IQuoteAggregator
         var sourceSummary = usedSources.Count > 0
             ? string.Join(" + ", usedSources)
             : "离线/全部源不可用";
-        var warning = !anyFresh && errors.Count > 0
-            ? $"全部行情源暂时失败（{string.Join("；", errors.Take(2))}），已保留上次成功报价"
-            : (errors.Count > 0 ? $"已自动切换至 {sourceSummary}" : null);
+        string? warning;
+        if (!anyFresh && errors.Count > 0)
+        {
+            warning = $"全部行情源暂时失败（{string.Join("；", errors.Take(2))}），已保留上次成功报价";
+        }
+        else if (!anyFresh && skippedBackoffSeconds.Count > 0)
+        {
+            var nextWait = Math.Max(1, (int)Math.Ceiling(skippedBackoffSeconds.Min()));
+            warning = $"全部行情源退避等待中（约 {nextWait} 秒后自动重试，可点击“刷新”立即重试），已保留上次成功报价";
+        }
+        else if (errors.Count > 0)
+        {
+            warning = $"已自动切换至 {sourceSummary}";
+        }
+        else
+        {
+            warning = null;
+        }
 
         return new BatchQuoteResponse(merged, sourceSummary, anyFresh, warning);
     }
@@ -304,14 +320,20 @@ public sealed class QuoteAggregatorService : IQuoteAggregator
             .OrderByDescending(p => p.Name.Equals(PrimaryProviderName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-    private bool IsInBackoff(string providerName, DateTimeOffset now)
+    private bool TryGetRemainingBackoffSeconds(string providerName, DateTimeOffset now, out double remainingSeconds)
     {
         lock (_sync)
         {
-            return _states.TryGetValue(providerName, out var st) &&
-                   st.BackoffUntil.HasValue &&
-                   now < st.BackoffUntil.Value;
+            if (_states.TryGetValue(providerName, out var st) &&
+                st.BackoffUntil.HasValue &&
+                now < st.BackoffUntil.Value)
+            {
+                remainingSeconds = (st.BackoffUntil.Value - now).TotalSeconds;
+                return true;
+            }
         }
+        remainingSeconds = 0;
+        return false;
     }
 
     private void RecordSuccess(string providerName, DateTimeOffset now)

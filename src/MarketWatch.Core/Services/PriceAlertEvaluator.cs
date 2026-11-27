@@ -11,6 +11,7 @@ public sealed class PriceAlertEvaluator
     private sealed class RuleRuntimeState
     {
         public decimal? LastObservedValue { get; set; }
+        public DateTimeOffset? LastObservedQuoteTime { get; set; }
         public DateTimeOffset? LastTriggeredAtUtc { get; set; }
         public bool NeedsRearm { get; set; }
     }
@@ -84,10 +85,23 @@ public sealed class PriceAlertEvaluator
                     state = new RuleRuntimeState
                     {
                         LastObservedValue = current,
+                        LastObservedQuoteTime = quote.QuoteTime,
                         NeedsRearm = IsAlreadyBeyondThreshold(rule.Direction, current, rule.Threshold)
                     };
                     _states[rule.Id] = state;
                     continue;
+                }
+
+                // Guard against out-of-order/older quotes when failing over or switching providers
+                if (state.LastObservedQuoteTime.HasValue)
+                {
+                    if (!quote.QuoteTime.HasValue || quote.QuoteTime.Value < state.LastObservedQuoteTime.Value)
+                        continue;
+                }
+
+                if (quote.QuoteTime.HasValue)
+                {
+                    state.LastObservedQuoteTime = quote.QuoteTime.Value;
                 }
 
                 // Update re-arm condition if previously triggered or started beyond threshold

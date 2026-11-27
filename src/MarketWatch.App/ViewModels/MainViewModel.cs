@@ -13,6 +13,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly AppStateCoordinator _coordinator;
     private readonly IClock _clock;
     private readonly ThemeManager _themeManager;
+    private bool _calendarNoticeDismissed;
+    private DateOnly _calendarNoticeDismissedDate;
 
     public ObservableCollection<WatchlistItemViewModel> WatchlistItems { get; } = new();
     public IntradayChartViewModel IntradayChart { get; }
@@ -161,9 +163,12 @@ public sealed partial class MainViewModel : ObservableObject
         var calEval = _coordinator.EvaluateTodayCalendar();
         if (calEval.CoverageStatus == CalendarCoverageStatus.UnknownFallbackToWeekdays)
         {
-            BannerMessage = calEval.Description;
+            if (!_calendarNoticeDismissed || _calendarNoticeDismissedDate != calEval.Date)
+            {
+                BannerMessage = calEval.Description;
+            }
         }
-        else if (BannerMessage is not null && BannerMessage.Contains("交易日历"))
+        else if (BannerMessage is not null && (BannerMessage.Contains("交易日历") || BannerMessage.Contains("申赎")))
         {
             BannerMessage = null;
         }
@@ -348,7 +353,12 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void DismissBanner() => BannerMessage = null;
+    private void DismissBanner()
+    {
+        _calendarNoticeDismissed = true;
+        _calendarNoticeDismissedDate = ChinaTimeHelper.GetChinaDate(_clock.UtcNow);
+        BannerMessage = null;
+    }
 
     private static void RunOnUi(Action action)
     {

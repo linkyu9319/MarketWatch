@@ -100,6 +100,18 @@ public interface IAlertHistoryStore
     Task AppendReminderRecordAsync(ReminderTriggerRecord record, CancellationToken cancellationToken = default);
     Task AppendPriceAlertRecordAsync(PriceAlertRecord record, CancellationToken cancellationToken = default);
     Task ClearAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Independent persistent daily trigger deduplication keys that survive user clearing of history logs.
+    /// </summary>
+    Task<IReadOnlySet<string>> LoadDedupKeysAsync(CancellationToken cancellationToken = default);
+    Task RecordDedupKeysAsync(IEnumerable<ReminderTriggerRecord> records, CancellationToken cancellationToken = default);
+}
+
+public interface ISessionStateProvider
+{
+    bool IsSessionLocked { get; }
+    event Action? SessionUnlocked;
 }
 
 public interface IAutoStartService

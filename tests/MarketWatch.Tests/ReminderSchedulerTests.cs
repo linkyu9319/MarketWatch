@@ -138,31 +138,72 @@ public sealed class ReminderSchedulerTests
     }
 
     [Fact]
-    public void SnoozeOneMinute_FiresAfterDelay_AndMarksAfterCutoffWhenPast1500()
+    public void SnoozeOneMinute_FiresBeforeCutoff_AndSuppressesPopupAfterCutoffOrNextDay()
     {
-        var clock = new FakeClock(Cst(2026, 11, 27, 14, 59, 20));
+        var clock = new FakeClock(Cst(2026, 11, 27, 14, 55, 10));
         var scheduler = new ReminderScheduler(clock, new TradingCalendarService());
         var rules = DefaultPresets.CreateDefaultReminderRules();
 
         var initial = scheduler.EvaluateTick(rules);
         Assert.Single(initial.PopupsToShow);
 
+        // Snooze #1 at 14:55:10 -> matures at 14:56:10 (before 15:00 cutoff) -> MUST popup
         scheduler.ScheduleSnooze(initial.PopupsToShow[0].Rule, initial.PopupsToShow[0].BusinessDate, TimeSpan.FromMinutes(1));
-
-        // 30s later: not yet
         clock.Advance(TimeSpan.FromSeconds(30));
         Assert.Empty(scheduler.EvaluateTick(rules).PopupsToShow);
 
-        // 65s later (15:00:25): snooze fires with IsAfterCutoff = true so user is clearly informed
-        clock.Advance(TimeSpan.FromSeconds(35));
-        var snoozed = scheduler.EvaluateTick(rules);
-        Assert.Single(snoozed.PopupsToShow);
-        Assert.True(snoozed.PopupsToShow[0].IsSnoozedFollowUp);
-        Assert.True(snoozed.PopupsToShow[0].IsAfterCutoff);
+        clock.Advance(TimeSpan.FromSeconds(35)); // 14:56:15
+        var snoozedOnTime = scheduler.EvaluateTick(rules);
+        Assert.Single(snoozedOnTime.PopupsToShow);
+        Assert.True(snoozedOnTime.PopupsToShow[0].IsSnoozedFollowUp);
+        Assert.False(snoozedOnTime.PopupsToShow[0].IsAfterCutoff);
+
+        // Snooze #2 at 14:59:20 -> matures at 15:00:25 (past cutoff!) -> MUST NOT popup, only record MissedAfterCutoff
+        clock.UtcNow = Cst(2026, 11, 27, 14, 59, 20);
+        scheduler.ScheduleSnooze(initial.PopupsToShow[0].Rule, initial.PopupsToShow[0].BusinessDate, TimeSpan.FromMinutes(1));
+        clock.Advance(TimeSpan.FromSeconds(65)); // 15:00:25
+        var snoozedPastCutoff = scheduler.EvaluateTick(rules);
+        Assert.Empty(snoozedPastCutoff.PopupsToShow);
+        Assert.Single(snoozedPastCutoff.RecordsToPersist);
+        Assert.Equal(ReminderTriggerStatus.MissedAfterCutoff, snoozedPastCutoff.RecordsToPersist[0].Status);
+
+        // Snooze #3 resumed next day -> MUST NOT popup stale previous-day reminder
+        clock.UtcNow = Cst(2026, 11, 27, 14, 59, 30);
+        scheduler.ScheduleSnooze(initial.PopupsToShow[0].Rule, new DateOnly(2026, 11, 27), TimeSpan.FromMinutes(1));
+        clock.UtcNow = Cst(2026, 11, 28, 9, 0, 0);
+        var nextDay = scheduler.EvaluateTick(rules);
+        Assert.Empty(nextDay.PopupsToShow);
+        Assert.Single(nextDay.RecordsToPersist);
+        Assert.Equal(ReminderTriggerStatus.MissedAfterCutoff, nextDay.RecordsToPersist[0].Status);
     }
 
     [Fact]
-    public void HolidayAndUnknownCalendarRange_SkipsOfficialHoliday_AndFallsBackSafelyFor2027()
+    public void LockedSession_DefersTriggersUntilUnlock_ThenCatchesUpOrRecordsMiss()
+    {
+        var clock = new FakeClock(Cst(2026, 11, 27, 14, 30, 5));
+        var scheduler = new ReminderScheduler(clock, new TradingCalendarService());
+        var rules = DefaultPresets.CreateDefaultReminderRules();
+
+        // While locked at 14:30 and 14:45 -> must NOT fire or mark keys triggered
+        var locked1 = scheduler.EvaluateTick(rules, isSessionLocked: true);
+        Assert.Empty(locked1.PopupsToShow);
+        Assert.Empty(locked1.RecordsToPersist);
+
+        clock.UtcNow = Cst(2026, 11, 27, 14, 46, 0);
+        var locked2 = scheduler.EvaluateTick(rules, isSessionLocked: true);
+        Assert.Empty(locked2.PopupsToShow);
+        Assert.Empty(locked2.RecordsToPersist);
+
+        // Unlock at 14:47 (before 15:00 cutoff) -> merges 14:30 and 14:45 into ONE catch-up popup!
+        clock.UtcNow = Cst(2026, 11, 27, 14, 47, 0);
+        var unlocked = scheduler.EvaluateTick(rules, isSessionLocked: false);
+        Assert.Single(unlocked.PopupsToShow);
+        Assert.True(unlocked.PopupsToShow[0].IsCatchUp);
+        Assert.Equal(["14:30", "14:45"], unlocked.PopupsToShow[0].MergedRuleSummary);
+    }
+
+    [Fact]
+    public void HolidayAndUnknownCalendarRange_SkipsOfficialHoliday_AndMarksUnverifiedFundCalendar()
     {
         var calendar = new TradingCalendarService();
         var rules = DefaultPresets.CreateDefaultReminderRules();
@@ -171,6 +212,17 @@ public sealed class ReminderSchedulerTests
         var holidayClock = new FakeClock(Cst(2026, 10, 1, 14, 30, 5));
         var holidayScheduler = new ReminderScheduler(holidayClock, calendar);
         Assert.Empty(holidayScheduler.EvaluateTick(rules).PopupsToShow);
+
+        // 2026-11-27 Friday -> fires reminder AND honestly flags unverified fund TA calendar
+        var openEval = calendar.EvaluateFundTradingDay(new DateOnly(2026, 11, 27), RepeatMode.FundTradingDays);
+        Assert.True(openEval.IsTradingDay);
+        Assert.Equal(CalendarCoverageStatus.UnknownFallbackToWeekdays, openEval.CoverageStatus);
+
+        // 2026-04-03 Good Friday (HK public holiday, CN open) -> fires with explicit HK holiday warning
+        var hkHolEval = calendar.EvaluateFundTradingDay(new DateOnly(2026, 4, 3), RepeatMode.FundTradingDays);
+        Assert.True(hkHolEval.IsTradingDay);
+        Assert.Equal(CalendarCoverageStatus.UnknownFallbackToWeekdays, hkHolEval.CoverageStatus);
+        Assert.Contains("港股公众假期", hkHolEval.Description);
 
         // 2026-11-28 Saturday -> must NOT fire
         var weekendClock = new FakeClock(Cst(2026, 11, 28, 14, 30, 5));
