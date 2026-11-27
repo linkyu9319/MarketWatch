@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <RootNamespace>MarketWatch.Tests</RootNamespace>
     <AssemblyName>MarketWatch.Tests</AssemblyName>
@@ -8,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MarketWatch.Core\MarketWatch.Core.csproj" />
     <ProjectReference Include="..\..\src\MarketWatch.Infrastructure\MarketWatch.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\MarketWatch.App\MarketWatch.App.csproj" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />

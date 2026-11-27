@@ -114,6 +114,11 @@ public sealed class JsonHistoryStore : IAlertHistoryStore
                 .Where(k => !string.IsNullOrWhiteSpace(k))
                 .ToHashSet(StringComparer.Ordinal);
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warn("History", $"Dedup state unavailable at startup; using visible history: {ex.Message}");
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
         finally
         {
             _ioLock.Release();
@@ -155,9 +160,6 @@ public sealed class JsonHistoryStore : IAlertHistoryStore
 
     private async Task<AlertHistoryData> LoadCoreAsync(CancellationToken cancellationToken)
     {
-        if (!File.Exists(HistoryFilePath))
-            return new AlertHistoryData();
-
         try
         {
             var json = await File.ReadAllTextAsync(HistoryFilePath, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -166,7 +168,11 @@ public sealed class JsonHistoryStore : IAlertHistoryStore
             data.PriceAlertRecords ??= new();
             return data;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return new AlertHistoryData();
+        }
+        catch (JsonException ex)
         {
             _logger.Warn("History", $"History file corrupted; resetting. Error: {ex.Message}");
             return new AlertHistoryData();
@@ -175,9 +181,6 @@ public sealed class JsonHistoryStore : IAlertHistoryStore
 
     private async Task<TriggerDedupState> LoadDedupStateCoreAsync(CancellationToken cancellationToken)
     {
-        if (!File.Exists(DedupStateFilePath))
-            return new TriggerDedupState();
-
         try
         {
             var json = await File.ReadAllTextAsync(DedupStateFilePath, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -185,7 +188,11 @@ public sealed class JsonHistoryStore : IAlertHistoryStore
             state.Entries ??= new();
             return state;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return new TriggerDedupState();
+        }
+        catch (JsonException ex)
         {
             _logger.Warn("History", $"Trigger dedup state corrupted; resetting. Error: {ex.Message}");
             return new TriggerDedupState();

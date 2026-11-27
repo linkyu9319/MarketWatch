@@ -26,7 +26,16 @@ public sealed partial class HistoryViewModel : ObservableObject
     [RelayCommand]
     public async Task LoadAsync()
     {
-        var data = await _coordinator.LoadHistoryAsync();
+        AlertHistoryData data;
+        try
+        {
+            data = await _coordinator.LoadHistoryAsync();
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            SummaryText = $"读取历史失败：{ex.Message}";
+            return;
+        }
         ReminderRecords.Clear();
         foreach (var r in data.ReminderRecords)
             ReminderRecords.Add(r);
@@ -41,7 +50,19 @@ public sealed partial class HistoryViewModel : ObservableObject
     [RelayCommand]
     private async Task ClearHistoryAsync()
     {
-        await _coordinator.ClearHistoryAsync();
+        try
+        {
+            if (!await _coordinator.ClearHistoryAsync())
+            {
+                SummaryText = "暂时无法读取或保存提醒触发记录，已保留历史，请稍后重试。";
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            SummaryText = $"清空历史失败：{ex.Message}";
+            return;
+        }
         await LoadAsync();
     }
 }

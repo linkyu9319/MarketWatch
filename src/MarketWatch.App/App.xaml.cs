@@ -44,8 +44,10 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        EventWaitHandle? updateReady = null;
         try
         {
+            updateReady = UpdateStartupSignal.OpenForLaunch(e.Args);
             _services = BuildServiceProvider(_logger);
 
             _coordinator = _services.GetRequiredService<AppStateCoordinator>();
@@ -84,16 +86,24 @@ public partial class App : System.Windows.Application
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
             SystemEvents.TimeChanged += OnSystemTimeChanged;
             _logger.Info("App", $"MarketWatch started (startMinimized={startMinimized}).");
+            updateReady?.Set();
         }
         catch (Exception ex)
         {
             _logger.Error("App", "Fatal startup failure", ex);
-            System.Windows.MessageBox.Show(
-                $"MarketWatch 启动失败：{ex.Message}",
-                "MarketWatch",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            if (updateReady is null)
+            {
+                System.Windows.MessageBox.Show(
+                    $"MarketWatch 启动失败：{ex.Message}",
+                    "MarketWatch",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
             Shutdown(1);
+        }
+        finally
+        {
+            updateReady?.Dispose();
         }
     }
 

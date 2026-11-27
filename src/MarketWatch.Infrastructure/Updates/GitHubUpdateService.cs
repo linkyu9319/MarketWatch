@@ -258,79 +258,16 @@ public sealed class GitHubUpdateService : IAppUpdateService, IDisposable
         Directory.CreateDirectory(_updatesDirectory);
         var scriptPath = Path.Combine(_updatesDirectory, "apply-update.ps1");
 
-        // Safe PowerShell self-updater: waits for old PID exit, swaps in staged EXE, caches Process.Handle for reliable ExitCode,
-        // verifies the new tray-resident EXE actually stays alive for 5s, and rolls back to .bak on ANY premature exit or launch failure.
-        var script = """
-param(
-    [Parameter(Mandatory=$true)][int]$TargetPid,
-    [Parameter(Mandatory=$true)][string]$TargetExe,
-    [Parameter(Mandatory=$true)][string]$StagedExe
-)
-$ErrorActionPreference = 'Stop'
-for ($i = 0; $i -lt 60; $i++) {
-    if (-not (Get-Process -Id $TargetPid -ErrorAction SilentlyContinue)) { break }
-    Start-Sleep -Milliseconds 300
-}
-Start-Sleep -Milliseconds 500
-$backupExe = "$TargetExe.bak"
-$failedExe = "$TargetExe.failed"
-if (Test-Path $backupExe) { Remove-Item $backupExe -Force -ErrorAction SilentlyContinue }
-if (Test-Path $failedExe) { Remove-Item $failedExe -Force -ErrorAction SilentlyContinue }
-if (Test-Path $TargetExe) { Move-Item -Path $TargetExe -Destination $backupExe -Force }
-
-$rolledBack = $false
-try {
-    Move-Item -Path $StagedExe -Destination $TargetExe -Force
-    $proc = Start-Process -FilePath $TargetExe -PassThru
-    $null = $proc.Handle # Cache Win32 process handle so ExitCode is always populated if it exits early
-
-    $healthy = $true
-    for ($check = 0; $check -lt 10; $check++) {
-        Start-Sleep -Milliseconds 500
-        $proc.Refresh()
-        if ($proc.HasExited) {
-            # A healthy tray-resident MarketWatch EXE must stay running; any premature exit (even 0 or null)
-            # without another running MarketWatch instance indicates startup failure -> trigger rollback.
-            $otherRunning = @(Get-Process -Name "MarketWatch" -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $proc.Id }).Count -gt 0
-            if (-not $otherRunning -or ($null -eq $proc.ExitCode) -or ($proc.ExitCode -ne 0)) {
-                $healthy = $false
-            }
-            break
+        using (var script = typeof(GitHubUpdateService).Assembly.GetManifestResourceStream("MarketWatch.Updates.ApplyUpdate.ps1")
+               ?? throw new InvalidOperationException("更新助手未包含在应用程序中。"))
+        using (var file = File.Create(scriptPath))
+        {
+            script.CopyTo(file);
         }
-    }
-
-    if ($healthy) {
-        $stillAlive = $null -ne (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)
-        $otherRunning = @(Get-Process -Name "MarketWatch" -ErrorAction SilentlyContinue).Count -gt 0
-        if ($stillAlive -or $otherRunning) {
-            if (Test-Path $backupExe) { Remove-Item $backupExe -Force -ErrorAction SilentlyContinue }
-        } else {
-            $healthy = $false
-        }
-    }
-
-    if (-not $healthy) {
-        if (Test-Path $TargetExe) { Move-Item -Path $TargetExe -Destination $failedExe -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $backupExe) {
-            Move-Item -Path $backupExe -Destination $TargetExe -Force
-            Start-Process -FilePath $TargetExe -ErrorAction SilentlyContinue
-            $rolledBack = $true
-        }
-    }
-} catch {
-    if (-not $rolledBack -and (Test-Path $backupExe)) {
-        if (Test-Path $TargetExe) { Move-Item -Path $TargetExe -Destination $failedExe -Force -ErrorAction SilentlyContinue }
-        Move-Item -Path $backupExe -Destination $TargetExe -Force
-        Start-Process -FilePath $TargetExe -ErrorAction SilentlyContinue
-    }
-    throw
-}
-""";
-        File.WriteAllText(scriptPath, script, new UTF8Encoding(false));
 
         var psi = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -348,7 +285,7 @@ try {
         psi.ArgumentList.Add("-StagedExe");
         psi.ArgumentList.Add(stagedExePath);
 
-        Process.Start(psi);
+        using var helper = Process.Start(psi) ?? throw new InvalidOperationException("未能启动更新助手。");
         _logger.Info("Updates", $"Launched self-update helper for PID={currentPid} -> {targetExePath}");
     }
 

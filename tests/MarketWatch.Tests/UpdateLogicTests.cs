@@ -2,12 +2,31 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using MarketWatch.Core.Models;
 using MarketWatch.Core.Services;
+using MarketWatch.Infrastructure.Updates;
 using Xunit;
 
 namespace MarketWatch.Tests;
 
 public sealed class UpdateLogicTests
 {
+#if WINDOWS
+    [Fact]
+    public void UpdateStartupSignal_OpensOnlyTheRequestedAttempt()
+    {
+        var attempt = Guid.NewGuid();
+        using var waiting = new EventWaitHandle(false, EventResetMode.ManualReset, $@"Local\MarketWatch.UpdateReady.{attempt:N}");
+
+        Assert.Null(UpdateStartupSignal.OpenForLaunch([]));
+        Assert.Null(UpdateStartupSignal.OpenForLaunch(["--update-attempt=invalid"]));
+        Assert.Null(UpdateStartupSignal.OpenForLaunch([$"--update-attempt={Guid.NewGuid():N}"]));
+        using var signal = UpdateStartupSignal.OpenForLaunch([$"--update-attempt={attempt:N}"]);
+        Assert.NotNull(signal);
+        Assert.False(waiting.WaitOne(0));
+        Assert.True(signal.Set());
+        Assert.True(waiting.WaitOne(0));
+    }
+#endif
+
     [Fact]
     public void CompareSemVer_HandlesNumericPrereleaseAndBuildMetadata()
     {

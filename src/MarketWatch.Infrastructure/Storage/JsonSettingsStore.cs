@@ -133,20 +133,32 @@ public sealed class JsonSettingsStore : ISettingsStore
         var tempPath = $"{filePath}.{Guid.NewGuid():N}.tmp";
         var json = JsonSerializer.Serialize(payload, JsonOptions);
 
-        await using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-        await using (var writer = new StreamWriter(fs, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+        var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
+        try
         {
-            await writer.WriteAsync(json.AsMemory(), cancellationToken).ConfigureAwait(false);
-            await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-        }
+            await using (fs)
+            await using (var writer = new StreamWriter(fs, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+            {
+                await writer.WriteAsync(json.AsMemory(), cancellationToken).ConfigureAwait(false);
+                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
 
-        if (File.Exists(filePath))
-        {
-            File.Replace(tempPath, filePath, destinationBackupFileName: null, ignoreMetadataErrors: true);
+            if (File.Exists(filePath))
+                File.Replace(tempPath, filePath, destinationBackupFileName: null, ignoreMetadataErrors: true);
+            else
+                File.Move(tempPath, filePath);
         }
-        else
+        catch
         {
-            File.Move(tempPath, filePath);
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Preserve the original write or replacement error.
+            }
+            throw;
         }
     }
 }

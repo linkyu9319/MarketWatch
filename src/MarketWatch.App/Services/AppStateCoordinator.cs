@@ -28,8 +28,11 @@ public sealed class AppStateCoordinator : IDisposable
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly SemaphoreSlim _schedulerGate = new(1, 1);
     private readonly object _settingsLock = new();
-    private readonly object _migrationLock = new();
-    private List<ReminderTriggerRecord> _pendingDedupMigrations = new();
+    // After startup, scheduler ticks and history clearing share _schedulerGate.
+    private readonly List<ReminderTriggerRecord> _pendingDedupRecords = new();
+    private bool _legacyHistoryReadPending;
+    private long _nextDedupRetryMs;
+    private const int DedupRetryDelayMs = 30_000;
 
     private AppSettings _settings = DefaultPresets.CreateDefaultSettings();
     private CancellationTokenSource? _loopCts;
@@ -74,8 +77,6 @@ public sealed class AppStateCoordinator : IDisposable
         _logger = logger;
         _scheduler = new ReminderScheduler(clock, calendar);
         _priceAlertEvaluator = new PriceAlertEvaluator();
-
-        _sessionState.SessionUnlocked += OnSessionUnlocked;
     }
 
     private void OnSessionUnlocked()
@@ -105,25 +106,10 @@ public sealed class AppStateCoordinator : IDisposable
         var dedupKeys = await _historyStore.LoadDedupKeysAsync(cancellationToken).ConfigureAwait(false);
         _scheduler.SeedDedupKeys(dedupKeys);
 
-        var history = await _historyStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        _scheduler.SeedFromHistory(history.ReminderRecords);
+        await TryReadLegacyHistoryAsync(dedupKeys, cancellationToken).ConfigureAwait(false);
+        await TryPersistDedupRecordsAsync(cancellationToken).ConfigureAwait(false);
 
-        // Migrate any legacy history.json keys (from v1.0.0 / v1.0.1 upgrades) into persistent trigger-state.json
-        // so clearing visible history never breaks restart deduplication. If trigger-state.json is temporarily locked,
-        // keep startup non-blocking (keys are already in memory) and retry persistence on subsequent ticks / before clear.
-        var unmigrated = history.ReminderRecords
-            .Where(r => !string.IsNullOrWhiteSpace(r.TriggerKey) && !dedupKeys.Contains(r.TriggerKey))
-            .ToList();
-        if (unmigrated.Count > 0)
-        {
-            lock (_migrationLock)
-            {
-                _pendingDedupMigrations = unmigrated;
-            }
-            await TryFlushPendingDedupMigrationsAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items, {Settings.ReminderRules.Count} reminder rules, {dedupKeys.Count + unmigrated.Count} dedup keys.");
+        _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items and {Settings.ReminderRules.Count} reminder rules.");
     }
 
     public void StartBackgroundLoops()
@@ -133,6 +119,7 @@ public sealed class AppStateCoordinator : IDisposable
         _started = true;
         _loopCts = new CancellationTokenSource();
         var ct = _loopCts.Token;
+        _sessionState.SessionUnlocked += OnSessionUnlocked;
 
         // Loop 1: Independent 1-second scheduler & Beijing clock ticker (NEVER awaits quotes!)
         _ = Task.Run(() => RunSchedulerLoopAsync(ct), ct);
@@ -176,8 +163,6 @@ public sealed class AppStateCoordinator : IDisposable
         await _schedulerGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await TryFlushPendingDedupMigrationsAsync(ct).ConfigureAwait(false);
-
             List<ReminderRule> rulesSnapshot;
             lock (_settingsLock)
             {
@@ -185,18 +170,11 @@ public sealed class AppStateCoordinator : IDisposable
             }
 
             var tick = _scheduler.EvaluateTick(rulesSnapshot, _sessionState.IsSessionLocked);
+            _pendingDedupRecords.AddRange(tick.RecordsToPersist);
+            await TryPersistDedupRecordsAsync(ct, force: tick.RecordsToPersist.Count > 0).ConfigureAwait(false);
 
             if (tick.RecordsToPersist.Count > 0)
             {
-                try
-                {
-                    await _historyStore.RecordDedupKeysAsync(tick.RecordsToPersist, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warn("History", $"Failed persisting dedup keys: {ex.Message}");
-                }
-
                 foreach (var rec in tick.RecordsToPersist)
                 {
                     try
@@ -444,35 +422,71 @@ public sealed class AppStateCoordinator : IDisposable
     public Task<AlertHistoryData> LoadHistoryAsync(CancellationToken ct = default) =>
         _historyStore.LoadAsync(ct);
 
-    public async Task ClearHistoryAsync(CancellationToken ct = default)
+    public async Task<bool> ClearHistoryAsync(CancellationToken ct = default)
     {
-        await TryFlushPendingDedupMigrationsAsync(ct).ConfigureAwait(false);
-        await _historyStore.ClearAsync(ct).ConfigureAwait(false);
+        await _schedulerGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_legacyHistoryReadPending)
+            {
+                var dedupKeys = await _historyStore.LoadDedupKeysAsync(ct).ConfigureAwait(false);
+                if (!await TryReadLegacyHistoryAsync(dedupKeys, ct).ConfigureAwait(false))
+                    return false;
+            }
+
+            if (!await TryPersistDedupRecordsAsync(ct, force: true).ConfigureAwait(false))
+                return false;
+
+            await _historyStore.ClearAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _schedulerGate.Release();
+        }
         HistoryUpdated?.Invoke();
+        return true;
     }
 
-    private async Task TryFlushPendingDedupMigrationsAsync(CancellationToken ct)
+    private async Task<bool> TryReadLegacyHistoryAsync(IReadOnlySet<string> dedupKeys, CancellationToken ct)
     {
-        List<ReminderTriggerRecord> snapshot;
-        lock (_migrationLock)
+        try
         {
-            if (_pendingDedupMigrations.Count == 0)
-                return;
-            snapshot = _pendingDedupMigrations.ToList();
+            var history = await _historyStore.LoadAsync(ct).ConfigureAwait(false);
+            _scheduler.SeedFromHistory(history.ReminderRecords);
+
+            // Preserve legacy trigger keys even if the visible history is cleared later.
+            _pendingDedupRecords.AddRange(history.ReminderRecords
+                .Where(r => !string.IsNullOrWhiteSpace(r.TriggerKey) && !dedupKeys.Contains(r.TriggerKey)));
+            _legacyHistoryReadPending = false;
+            return true;
         }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            _legacyHistoryReadPending = true;
+            _logger.Warn("History", $"Deferred reading legacy reminder history: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task<bool> TryPersistDedupRecordsAsync(CancellationToken ct, bool force = false)
+    {
+        if (_pendingDedupRecords.Count == 0)
+            return true;
+        if (!force && Environment.TickCount64 < _nextDedupRetryMs)
+            return false;
 
         try
         {
-            await _historyStore.RecordDedupKeysAsync(snapshot, ct).ConfigureAwait(false);
-            lock (_migrationLock)
-            {
-                _pendingDedupMigrations.Clear();
-            }
-            _logger.Info("History", $"Migrated {snapshot.Count} legacy trigger dedup keys to trigger-state.json.");
+            await _historyStore.RecordDedupKeysAsync(_pendingDedupRecords, ct).ConfigureAwait(false);
+            _pendingDedupRecords.Clear();
+            _nextDedupRetryMs = 0;
+            return true;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
-            _logger.Warn("History", $"Deferred legacy dedup migration because trigger-state.json is temporarily unavailable: {ex.Message}");
+            _nextDedupRetryMs = Environment.TickCount64 + DedupRetryDelayMs;
+            _logger.Warn("History", $"Deferred persisting reminder keys: {ex.Message}");
+            return false;
         }
     }
 

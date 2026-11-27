@@ -18,21 +18,20 @@ public sealed class WindowsSessionStateProvider : ISessionStateProvider, IDispos
     private const int WtsSessionStateLock = 0;
     private const uint DesktopSwitchDesktop = 0x0100;
 
-    private volatile bool _isSessionLocked;
     private readonly IAppLogger _logger;
 
-    public bool IsSessionLocked => _isSessionLocked || QueryCurrentDesktopLocked();
+    // Returning from the UAC desktop does not raise SessionUnlock. Recheck on every scheduler tick.
+    public bool IsSessionLocked => QueryCurrentDesktopLocked();
     public event Action? SessionUnlocked;
 
     public WindowsSessionStateProvider(IAppLogger logger)
     {
         _logger = logger;
-        _isSessionLocked = QueryCurrentDesktopLocked();
-        if (_isSessionLocked)
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        if (IsSessionLocked)
         {
             _logger.Info("Session", "Application started while Windows session is already locked; deferring reminders until unlock.");
         }
-        SystemEvents.SessionSwitch += OnSessionSwitch;
     }
 
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -42,14 +41,12 @@ public sealed class WindowsSessionStateProvider : ISessionStateProvider, IDispos
             case SessionSwitchReason.SessionLock:
             case SessionSwitchReason.ConsoleDisconnect:
             case SessionSwitchReason.RemoteDisconnect:
-                _isSessionLocked = true;
                 _logger.Info("Session", $"Desktop session locked ({e.Reason}); deferring reminder triggers until unlock.");
                 break;
 
             case SessionSwitchReason.SessionUnlock:
             case SessionSwitchReason.ConsoleConnect:
             case SessionSwitchReason.RemoteConnect:
-                _isSessionLocked = false;
                 _logger.Info("Session", $"Desktop session unlocked ({e.Reason}); resuming reminder evaluation.");
                 SessionUnlocked?.Invoke();
                 break;

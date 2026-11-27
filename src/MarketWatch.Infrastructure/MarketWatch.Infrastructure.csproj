@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MarketWatch.Core\MarketWatch.Core.csproj" />
+    <EmbeddedResource Include="Updates\ApplyUpdate.ps1" LogicalName="MarketWatch.Updates.ApplyUpdate.ps1" />
   </ItemGroup>
 </Project>
