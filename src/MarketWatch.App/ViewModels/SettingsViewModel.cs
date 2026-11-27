@@ -11,13 +11,17 @@ using MarketWatch.Core.Services;
 
 namespace MarketWatch.App.ViewModels;
 
+public sealed record TargetInstrumentOption(string Key, string Label);
+
 public sealed partial class EditableReminderRuleViewModel : ObservableObject
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
-    [ObservableProperty] private string _name = "恒生科技基金交易提醒";
-    [ObservableProperty] private InstrumentId _targetInstrumentId = DefaultPresets.HstechId;
-    [ObservableProperty] private string _triggerTimeText = "14:30";
-    [ObservableProperty] private string _cutoffTimeText = "15:00";
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _targetInstrumentKey = "";
+    [ObservableProperty] private string _triggerHour = "14";
+    [ObservableProperty] private string _triggerMinute = "30";
+    [ObservableProperty] private string _cutoffHour = "15";
+    [ObservableProperty] private string _cutoffMinute = "00";
     [ObservableProperty] private RepeatMode _repeatMode = RepeatMode.FundTradingDays;
     [ObservableProperty] private ReminderStrength _strength = ReminderStrength.Normal;
     [ObservableProperty] private bool _isEnabled = true;
@@ -26,9 +30,11 @@ public sealed partial class EditableReminderRuleViewModel : ObservableObject
     {
         Id = m.Id,
         Name = m.Name,
-        TargetInstrumentId = m.TargetInstrumentId ?? DefaultPresets.HstechId,
-        TriggerTimeText = m.TriggerTime.ToString("HH:mm"),
-        CutoffTimeText = m.CutoffTime.ToString("HH:mm"),
+        TargetInstrumentKey = m.TargetInstrumentId?.CanonicalKey ?? "",
+        TriggerHour = m.TriggerTime.Hour.ToString("00"),
+        TriggerMinute = m.TriggerTime.Minute.ToString("00"),
+        CutoffHour = m.CutoffTime.Hour.ToString("00"),
+        CutoffMinute = m.CutoffTime.Minute.ToString("00"),
         RepeatMode = m.RepeatMode,
         Strength = m.Strength,
         IsEnabled = m.IsEnabled
@@ -36,18 +42,19 @@ public sealed partial class EditableReminderRuleViewModel : ObservableObject
 
     public ReminderRule ToModel(bool allowFullScreen, bool allowSound)
     {
-        var trigger = TimeOnly.TryParseExact(TriggerTimeText.Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t)
-            ? t : new TimeOnly(14, 30);
-        var cutoff = TimeOnly.TryParseExact(CutoffTimeText.Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var c)
-            ? c : new TimeOnly(15, 0);
+        var th = int.TryParse(TriggerHour, out var h1) ? Math.Clamp(h1, 0, 23) : 14;
+        var tm = int.TryParse(TriggerMinute, out var m1) ? Math.Clamp(m1, 0, 59) : 30;
+        var ch = int.TryParse(CutoffHour, out var h2) ? Math.Clamp(h2, 0, 23) : 15;
+        var cm = int.TryParse(CutoffMinute, out var m2) ? Math.Clamp(m2, 0, 59) : 0;
+        InstrumentId? targetId = InstrumentId.TryParse(TargetInstrumentKey, out var parsedId) ? parsedId : null;
 
         return new ReminderRule
         {
             Id = Id,
-            Name = string.IsNullOrWhiteSpace(Name) ? "恒生科技基金交易提醒" : Name.Trim(),
-            TargetInstrumentId = TargetInstrumentId,
-            TriggerTime = trigger,
-            CutoffTime = cutoff,
+            Name = string.IsNullOrWhiteSpace(Name) ? "定时交易提醒" : Name.Trim(),
+            TargetInstrumentId = targetId,
+            TriggerTime = new TimeOnly(th, tm),
+            CutoffTime = new TimeOnly(ch, cm),
             RepeatMode = RepeatMode,
             Strength = Strength,
             IsEnabled = IsEnabled,
@@ -137,10 +144,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     public ObservableCollection<EditableReminderRuleViewModel> ReminderRules { get; } = new();
     public ObservableCollection<EditablePriceAlertViewModel> PriceAlerts { get; } = new();
     public ObservableCollection<Instrument> AvailableInstruments { get; } = new();
+    public ObservableCollection<TargetInstrumentOption> TargetInstrumentOptions { get; } = new();
     public ObservableCollection<string> CustomHolidayDates { get; } = new();
     public ObservableCollection<string> CustomOpenDates { get; } = new();
     public ObservableCollection<ProviderHealthSnapshot> ProviderHealthList { get; } = new();
 
+    public IReadOnlyList<string> Hours { get; } = Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToList();
+    public IReadOnlyList<string> Minutes { get; } = Enumerable.Range(0, 60).Select(m => m.ToString("00")).ToList();
     public IReadOnlyList<ThemeMode> ThemeModes { get; } = [ThemeMode.Dark, ThemeMode.Light];
     public IReadOnlyList<ColorScheme> ColorSchemes { get; } = [ColorScheme.ChinaRedUpGreenDown, ColorScheme.InternationalGreenUpRedDown];
     public IReadOnlyList<string> Providers { get; } = ["Eastmoney", "Tencent"];
@@ -184,8 +194,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         ConfigPathText = _coordinator.SettingsFilePath;
 
         AvailableInstruments.Clear();
+        TargetInstrumentOptions.Clear();
+        TargetInstrumentOptions.Add(new TargetInstrumentOption("", "不关联特定标的"));
         foreach (var w in s.Watchlist)
+        {
             AvailableInstruments.Add(w);
+            TargetInstrumentOptions.Add(new TargetInstrumentOption(w.Id.CanonicalKey, $"{w.Name} ({w.DisplayCode})"));
+        }
         NewAlertInstrument = AvailableInstruments.FirstOrDefault();
 
         ReminderRules.Clear();
@@ -225,10 +240,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         ReminderRules.Add(new EditableReminderRuleViewModel
         {
-            Name = "恒生科技基金交易提醒",
-            TargetInstrumentId = AvailableInstruments.FirstOrDefault()?.Id ?? DefaultPresets.HstechId,
-            TriggerTimeText = "14:50",
-            CutoffTimeText = "15:00",
+            Name = "",
+            TargetInstrumentKey = "",
+            TriggerHour = "14",
+            TriggerMinute = "50",
+            CutoffHour = "15",
+            CutoffMinute = "00",
             RepeatMode = DefaultCalendarMode,
             Strength = ReminderStrength.Normal,
             IsEnabled = true

@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="MarketWatch 设置"
-        Width="740"
-        Height="580"
-        MinWidth="660"
-        MinHeight="500"
+        Width="780"
+        Height="600"
+        MinWidth="700"
+        MinHeight="520"
         Background="{DynamicResource AppBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
         FontFamily="{StaticResource PrimaryFont}"
@@ -105,38 +105,76 @@
                                 Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Right" />
                     </DockPanel>
 
-                    <Border Grid.Row="1" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="8" Padding="8">
+                    <Border Grid.Row="1" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="8" Padding="10">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding ReminderRules}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
-                                            <Grid>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                </Grid.RowDefinitions>
-                                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                                                    <CheckBox IsChecked="{Binding IsEnabled}" Content="启用" Margin="0,0,10,0" />
-                                                    <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Width="240" Margin="0,0,10,0" />
-                                                    <TextBlock Text="触发(HH:mm):" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
-                                                    <TextBox Text="{Binding TriggerTimeText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Width="66" Margin="0,0,10,0" />
-                                                    <TextBlock Text="截止:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
-                                                    <TextBox Text="{Binding CutoffTimeText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Width="66" Margin="0,0,10,0" />
-                                                    <Button Content="删除"
+                                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <!-- Row 1: Enable + Flexible Name Input + Delete -->
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" Content="启用" Margin="0,0,12,0" VerticalAlignment="Center" />
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                             Tag="请输入提醒名称（如：基金截止提醒）"
+                                                             Style="{StaticResource ModernTextBoxStyle}"
+                                                             Margin="0,0,10,0" />
+                                                    <Button Grid.Column="2" Content="删除"
                                                             Command="{Binding DataContext.RemoveReminderRuleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             CommandParameter="{Binding}"
-                                                            Style="{StaticResource SubtleButtonStyle}" Padding="8,4" />
-                                                </StackPanel>
-                                                <StackPanel Grid.Row="1" Orientation="Horizontal">
-                                                    <TextBlock Text="重复模式:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
-                                                    <ComboBox ItemsSource="{Binding DataContext.RepeatModes, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding RepeatMode}" ItemTemplate="{StaticResource EnumComboItemTemplate}" Width="210" Margin="0,0,14,0" />
-                                                    <TextBlock Text="提醒强度:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
-                                                    <ComboBox ItemsSource="{Binding DataContext.Strengths, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding Strength}" ItemTemplate="{StaticResource EnumComboItemTemplate}" Width="145" />
-                                                </StackPanel>
-                                            </Grid>
+                                                            Style="{StaticResource SubtleButtonStyle}" Padding="12,5" />
+                                                </Grid>
+
+                                                <!-- Row 2: Time Picker Controls (Hour : Minute) + Target Instrument -->
+                                                <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                                                        <TextBlock Text="触发时间：" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.Hours, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedItem="{Binding TriggerHour}" Width="60" FontFamily="{StaticResource MonoFont}" />
+                                                        <TextBlock Text=":" VerticalAlignment="Center" Margin="4,0" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.Minutes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedItem="{Binding TriggerMinute}" Width="60" FontFamily="{StaticResource MonoFont}" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,16,4" VerticalAlignment="Center">
+                                                        <TextBlock Text="截止时间：" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.Hours, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedItem="{Binding CutoffHour}" Width="60" FontFamily="{StaticResource MonoFont}" />
+                                                        <TextBlock Text=":" VerticalAlignment="Center" Margin="4,0" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.Minutes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedItem="{Binding CutoffMinute}" Width="60" FontFamily="{StaticResource MonoFont}" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4" VerticalAlignment="Center">
+                                                        <TextBlock Text="关联标的：" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.TargetInstrumentOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedValue="{Binding TargetInstrumentKey}"
+                                                                  SelectedValuePath="Key"
+                                                                  DisplayMemberPath="Label"
+                                                                  Width="175" />
+                                                    </StackPanel>
+                                                </WrapPanel>
+
+                                                <!-- Row 3: Repeat Mode + Strength -->
+                                                <WrapPanel Orientation="Horizontal">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="重复模式：" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.RepeatModes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedItem="{Binding RepeatMode}" ItemTemplate="{StaticResource EnumComboItemTemplate}" Width="230" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="提醒强度：" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+                                                        <ComboBox ItemsSource="{Binding DataContext.Strengths, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedItem="{Binding Strength}" ItemTemplate="{StaticResource EnumComboItemTemplate}" Width="165" />
+                                                    </StackPanel>
+                                                </WrapPanel>
+                                            </StackPanel>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

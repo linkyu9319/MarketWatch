@@ -114,39 +114,51 @@ public sealed partial class ReminderPopupViewModel : ObservableObject
             return;
 
         var rule = ReminderEvent.Rule;
-        var targetId = rule.TargetInstrumentId ?? DefaultPresets.HstechId;
-        var inst = _coordinator.Settings.Watchlist.FirstOrDefault(x => x.Id == targetId)
-                   ?? DefaultPresets.CreateFullCatalog().FirstOrDefault(x => x.Id == targetId);
-        var quote = _coordinator.GetLatestQuote(targetId);
-
-        InstrumentTitle = inst is not null
-            ? $"{inst.Name} ({inst.DisplayCode})"
-            : targetId.Code;
-
-        if (quote is not null && quote.HasPrice)
+        if (!rule.TargetInstrumentId.HasValue)
         {
             IsQuoteUnavailable = false;
-            var p = quote.LastPrice!.Value;
-            PriceText = p < 10m ? p.ToString("0.000") : p.ToString("N2");
-
-            var chgStr = quote.Change.HasValue ? $"{(quote.Change.Value > 0 ? "+" : "")}{quote.Change.Value:0.00}" : "--";
-            var pctStr = quote.ChangePercent.HasValue ? $"{(quote.ChangePercent.Value > 0 ? "+" : "")}{quote.ChangePercent.Value:0.00}%" : "--";
-            ChangeText = $"{chgStr}  ({pctStr})";
-            ChangeBrush = _themeManager.GetDirectionBrush(quote.ChangePercent ?? quote.Change);
-
-            var qtStr = quote.QuoteTime.HasValue
-                ? ChinaTimeHelper.ToChinaTime(quote.QuoteTime.Value).ToString("MM-dd HH:mm:ss")
-                : "--";
-            var staleSuffix = quote.DelayStatus == DelayStatus.Stale ? " · 已过期/缓存" : "";
-            QuoteMetaText = $"行情时间：{qtStr}  |  来源：{FormatSource(quote.Source)}{staleSuffix}";
+            InstrumentTitle = "通用定时提醒（未关联特定标的）";
+            PriceText = $"{rule.TriggerTime:HH:mm}";
+            ChangeText = $"截止时间 {rule.CutoffTime:HH:mm}";
+            ChangeBrush = _themeManager.GetDirectionBrush(null);
+            QuoteMetaText = "纯本地北京时间定时触发 · 不依赖网络连接";
         }
         else
         {
-            IsQuoteUnavailable = true;
-            PriceText = "行情不可用";
-            ChangeText = quote?.Error ?? "暂未获取到最新报价，但本地提醒照常准时弹出";
-            ChangeBrush = _themeManager.GetDirectionBrush(null);
-            QuoteMetaText = "离线或数据源暂不可用 · 请以交易平台实时页面为准";
+            var targetId = rule.TargetInstrumentId.Value;
+            var inst = _coordinator.Settings.Watchlist.FirstOrDefault(x => x.Id == targetId)
+                       ?? DefaultPresets.CreateFullCatalog().FirstOrDefault(x => x.Id == targetId);
+            var quote = _coordinator.GetLatestQuote(targetId);
+
+            InstrumentTitle = inst is not null
+                ? $"{inst.Name} ({inst.DisplayCode})"
+                : targetId.Code;
+
+            if (quote is not null && quote.HasPrice)
+            {
+                IsQuoteUnavailable = false;
+                var p = quote.LastPrice!.Value;
+                PriceText = p < 10m ? p.ToString("0.000") : p.ToString("N2");
+
+                var chgStr = quote.Change.HasValue ? $"{(quote.Change.Value > 0 ? "+" : "")}{quote.Change.Value:0.00}" : "--";
+                var pctStr = quote.ChangePercent.HasValue ? $"{(quote.ChangePercent.Value > 0 ? "+" : "")}{quote.ChangePercent.Value:0.00}%" : "--";
+                ChangeText = $"{chgStr}  ({pctStr})";
+                ChangeBrush = _themeManager.GetDirectionBrush(quote.ChangePercent ?? quote.Change);
+
+                var qtStr = quote.QuoteTime.HasValue
+                    ? ChinaTimeHelper.ToChinaTime(quote.QuoteTime.Value).ToString("MM-dd HH:mm:ss")
+                    : "--";
+                var staleSuffix = quote.DelayStatus == DelayStatus.Stale ? " · 已过期/缓存" : "";
+                QuoteMetaText = $"行情时间：{qtStr}  |  来源：{FormatSource(quote.Source)}{staleSuffix}";
+            }
+            else
+            {
+                IsQuoteUnavailable = true;
+                PriceText = "行情不可用";
+                ChangeText = quote?.Error ?? "暂未获取到最新报价，但本地提醒照常准时弹出";
+                ChangeBrush = _themeManager.GetDirectionBrush(null);
+                QuoteMetaText = "离线或数据源暂不可用 · 请以交易平台实时页面为准";
+            }
         }
 
         var cutoffDt = ChinaTimeHelper.CreateChinaDateTimeOffset(ReminderEvent.BusinessDate, rule.CutoffTime);

@@ -128,7 +128,7 @@
         </Setter>
     </Style>
 
-    <!-- Modern TextBox -->
+    <!-- Modern TextBox (supports optional Tag placeholder watermark) -->
     <Style x:Key="ModernTextBoxStyle" TargetType="TextBox">
         <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
@@ -148,12 +148,29 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="6"
                             SnapsToDevicePixels="True">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="2,0" />
+                        <Grid>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="2,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="PlaceholderText"
+                                       Text="{TemplateBinding Tag}"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       Margin="10,0,8,0"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       Visibility="Collapsed" />
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsFocused" Value="True">
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Text" Value="" />
+                                <Condition Property="IsKeyboardFocused" Value="False" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
+                        </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -168,14 +185,196 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
-    <!-- Modern ComboBox -->
+    <!-- Fully Themed Dark/Light ComboBoxItem -->
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="ItemBd"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}"
+                            CornerRadius="4"
+                            Margin="2,1"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="ItemBd" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemBd" Property="Background" Value="{DynamicResource SelectedRowBackgroundBrush}" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Fully Themed Dark/Light ComboBox (fixes white text on bright Aero2 chrome) -->
     <Style TargetType="ComboBox">
         <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
-        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,5,28,5" />
         <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}" />
         <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid x:Name="MainGrid" SnapsToDevicePixels="True">
+                        <ToggleButton x:Name="ToggleButton"
+                                      Focusable="False"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      ClickMode="Press"
+                                      Cursor="Hand">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Chrome"
+                                            Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                            BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                            BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                            CornerRadius="6"
+                                            SnapsToDevicePixels="True">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="26" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="1"
+                                                  Data="M 0 0 L 4.5 4.5 L 9 0"
+                                                  Stroke="{DynamicResource TextSecondaryBrush}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round"
+                                                  StrokeLineJoin="Round"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+
+                        <ContentPresenter x:Name="ContentSite"
+                                          IsHitTestVisible="False"
+                                          Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                          ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          HorizontalAlignment="Left" />
+
+                        <Popup x:Name="PART_Popup"
+                               Placement="Bottom"
+                               PlacementTarget="{Binding ElementName=ToggleButton}"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               PopupAnimation="Fade"
+                               VerticalOffset="3">
+                            <Border x:Name="DropDownBorder"
+                                    MinWidth="{Binding ActualWidth, ElementName=ToggleButton}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                    Background="{DynamicResource CardBackgroundBrush}"
+                                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="2"
+                                    SnapsToDevicePixels="True">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.35" Color="#000000" />
+                                </Border.Effect>
+                                <ScrollViewer Margin="0" SnapsToDevicePixels="True">
+                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Themed ContextMenu & MenuItem -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.35" Color="#000000" />
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Modern DataGrid -->
