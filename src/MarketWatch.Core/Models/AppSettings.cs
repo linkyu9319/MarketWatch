@@ -44,6 +44,35 @@ public sealed class AppSettings
         CustomHolidayDates ??= new();
         CustomOpenDates ??= new();
     }
+
+    public AppSettings Clone() => new()
+    {
+        SchemaVersion = SchemaVersion,
+        RefreshIntervalSeconds = RefreshIntervalSeconds,
+        ThemeMode = ThemeMode,
+        ColorScheme = ColorScheme,
+        MinimizeToTray = MinimizeToTray,
+        CloseToTray = CloseToTray,
+        ShowQuoteInTrayTooltip = ShowQuoteInTrayTooltip,
+        TopMostMainWindow = TopMostMainWindow,
+        EnableAnimations = EnableAnimations,
+        EnableReminderSound = EnableReminderSound,
+        EnableFullScreenOverlayForStrong = EnableFullScreenOverlayForStrong,
+        AutoStartEnabled = AutoStartEnabled,
+        DefaultCalendarMode = DefaultCalendarMode,
+        PrimaryProvider = PrimaryProvider,
+        WindowWidth = WindowWidth,
+        WindowHeight = WindowHeight,
+        MiniWindowVisible = MiniWindowVisible,
+        MiniWindowLeft = MiniWindowLeft,
+        MiniWindowTop = MiniWindowTop,
+        MiniWindowOpacity = MiniWindowOpacity,
+        Watchlist = Watchlist.Select(w => w.Clone()).ToList(),
+        ReminderRules = ReminderRules.Select(r => r.Clone()).ToList(),
+        PriceAlerts = PriceAlerts.Select(a => a.Clone()).ToList(),
+        CustomHolidayDates = new List<DateOnly>(CustomHolidayDates),
+        CustomOpenDates = new List<DateOnly>(CustomOpenDates)
+    };
 }
 
 public sealed class AlertHistoryData

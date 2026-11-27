@@ -12,6 +12,9 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="MarketWatch.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Resource Include="Assets\vegetable.png" />
     <Resource Include="Assets\vegetable.ico" />
   </ItemGroup>

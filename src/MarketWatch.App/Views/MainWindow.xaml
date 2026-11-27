@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         Title="青菜盯盘"
-        Icon="pack://application:,,,/Assets/vegetable.png"
+        Icon="pack://application:,,,/MarketWatch;component/Assets/vegetable.png"
         Width="850"
         Height="550"
         MinWidth="710"
@@ -46,7 +46,7 @@
                             Padding="4"
                             Margin="0,0,10,0"
                             VerticalAlignment="Center">
-                        <Image Source="pack://application:,,,/Assets/vegetable.png"
+                        <Image Source="pack://application:,,,/MarketWatch;component/Assets/vegetable.png"
                                RenderOptions.BitmapScalingMode="HighQuality"
                                Stretch="Uniform" />
                     </Border>
@@ -262,7 +262,9 @@
                               ItemsSource="{Binding WatchlistItems}"
                               SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                               Style="{StaticResource ModernDataGridStyle}"
-                              MouseLeftButtonUp="OnWatchlistRowClicked">
+                              MouseLeftButtonUp="OnWatchlistRowClicked"
+                              PreviewMouseRightButtonDown="OnWatchlistPreviewMouseRightButtonDown"
+                              ContextMenuOpening="OnWatchlistContextMenuOpening">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="查看当日分时图"

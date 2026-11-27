@@ -28,6 +28,7 @@ public sealed class AppStateCoordinator : IDisposable
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly SemaphoreSlim _schedulerGate = new(1, 1);
     private readonly object _settingsLock = new();
+    private readonly SemaphoreSlim _settingsSaveGate = new(1, 1);
     // After startup, scheduler ticks and history clearing share _schedulerGate.
     private readonly List<ReminderTriggerRecord> _pendingDedupRecords = new();
     private bool _legacyHistoryReadPending;
@@ -372,20 +373,37 @@ public sealed class AppStateCoordinator : IDisposable
 
     public async Task UpdateSettingsAsync(Action<AppSettings> mutator, bool triggerImmediateRefresh = false)
     {
-        AppSettings updated;
-        lock (_settingsLock)
+        AppSettings candidate;
+        await _settingsSaveGate.WaitAsync().ConfigureAwait(false);
+        try
         {
+            lock (_settingsLock)
+            {
+                // Work on a deep clone so a failed disk save never leaves in-memory state diverged
+                candidate = _settings.Clone();
+            }
+
             // Snapshot provider hints onto existing rules BEFORE mutator potentially deletes items from Watchlist
-            EnrichRuleHintsLocked();
-            mutator(_settings);
-            _settings.Normalize();
-            EnrichRuleHintsLocked();
-            updated = _settings;
+            EnrichRuleHints(candidate);
+            mutator(candidate);
+            candidate.Normalize();
+            EnrichRuleHints(candidate);
+
+            await _settingsStore.SaveAsync(candidate).ConfigureAwait(false);
+
+            lock (_settingsLock)
+            {
+                _settings = candidate;
+            }
+
+            ApplySettingsSideEffects(candidate);
+        }
+        finally
+        {
+            _settingsSaveGate.Release();
         }
 
-        ApplySettingsSideEffects(updated);
-        await _settingsStore.SaveAsync(updated).ConfigureAwait(false);
-        SettingsUpdated?.Invoke(updated);
+        SettingsUpdated?.Invoke(candidate);
 
         if (triggerImmediateRefresh)
         {
@@ -396,14 +414,24 @@ public sealed class AppStateCoordinator : IDisposable
 
     public async Task ReplaceSettingsAsync(AppSettings imported)
     {
-        imported.Normalize();
-        lock (_settingsLock)
+        var candidate = imported.Clone();
+        await _settingsSaveGate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            _settings = imported;
+            candidate.Normalize();
+            EnrichRuleHints(candidate);
+            await _settingsStore.SaveAsync(candidate).ConfigureAwait(false);
+            lock (_settingsLock)
+            {
+                _settings = candidate;
+            }
+            ApplySettingsSideEffects(candidate);
         }
-        ApplySettingsSideEffects(imported);
-        await _settingsStore.SaveAsync(imported).ConfigureAwait(false);
-        SettingsUpdated?.Invoke(imported);
+        finally
+        {
+            _settingsSaveGate.Release();
+        }
+        SettingsUpdated?.Invoke(candidate);
         _nextQuotePollUtc = DateTimeOffset.MinValue;
         _ = RefreshQuotesAsync(forceResetBackoff: true);
     }
@@ -509,15 +537,17 @@ public sealed class AppStateCoordinator : IDisposable
         _calendar.UpdateCustomOverrides(s.CustomHolidayDates, s.CustomOpenDates);
     }
 
-    private void EnrichRuleHintsLocked()
+    private void EnrichRuleHintsLocked() => EnrichRuleHints(_settings);
+
+    private static void EnrichRuleHints(AppSettings settings)
     {
         var knownById = new Dictionary<InstrumentId, Instrument>();
         foreach (var c in DefaultPresets.CreateFullCatalog())
             knownById[c.Id] = c;
-        foreach (var w in _settings.Watchlist)
+        foreach (var w in settings.Watchlist)
             knownById[w.Id] = w;
 
-        foreach (var rule in _settings.ReminderRules)
+        foreach (var rule in settings.ReminderRules)
         {
             if (rule.TargetInstrumentId.HasValue && knownById.TryGetValue(rule.TargetInstrumentId.Value, out var inst))
             {
@@ -529,7 +559,7 @@ public sealed class AppStateCoordinator : IDisposable
             }
         }
 
-        foreach (var alert in _settings.PriceAlerts)
+        foreach (var alert in settings.PriceAlerts)
         {
             if (knownById.TryGetValue(alert.InstrumentId, out var inst))
             {
@@ -614,5 +644,6 @@ public sealed class AppStateCoordinator : IDisposable
         catch { }
         _refreshGate.Dispose();
         _schedulerGate.Dispose();
+        _settingsSaveGate.Dispose();
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MarketWatch.App.Services;
@@ -64,6 +65,9 @@ public sealed partial class MainViewModel : ObservableObject
     public event Action? ToggleMiniWindowRequested;
     public event Action<ReminderStrength>? TestReminderRequested;
     public event Action<Instrument>? AddPriceAlertForInstrumentRequested;
+    public event Action? ColumnSortClearRequested;
+
+    public Task LastPendingMiniToggleTask { get; private set; } = Task.CompletedTask;
 
     public MainViewModel(
         AppStateCoordinator coordinator,
@@ -93,10 +97,23 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnSelectedItemChanged(WatchlistItemViewModel? value)
     {
-        if (value is not null && IsIntradayDrawerOpen)
+        if (!IsIntradayDrawerOpen)
+            return;
+
+        if (value is null)
         {
-            _ = IntradayChart.LoadForInstrumentAsync(value.Instrument);
+            IsIntradayDrawerOpen = false;
+            IntradayChart.Clear();
+            return;
         }
+
+        if (IntradayChart.CurrentInstrument?.Id == value.Id &&
+            (IntradayChart.CurrentSeries is not null || IntradayChart.IsLoading))
+        {
+            return;
+        }
+
+        _ = IntradayChart.LoadForInstrumentAsync(value.Instrument);
     }
 
     private void SyncFromSettings(AppSettings settings)
@@ -112,7 +129,7 @@ public sealed partial class MainViewModel : ObservableObject
             _allWatchlistItems.Clear();
             foreach (var inst in settings.Watchlist)
             {
-                var vm = new WatchlistItemViewModel(inst, _themeManager, HandleMiniWindowToggled);
+                var vm = new WatchlistItemViewModel(inst.Clone(), _themeManager, HandleMiniWindowToggled);
                 if (existingQuotes.TryGetValue(inst.Id, out var q))
                 {
                     vm.ApplyQuote(q);
@@ -172,6 +189,15 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SelectedItem = null;
         }
+
+        // If the active intraday chart belongs to an instrument no longer visible in the current group, close & clear it
+        if (IsIntradayDrawerOpen &&
+            (IntradayChart.CurrentInstrument is null ||
+             !WatchlistItems.Any(x => x.Id == IntradayChart.CurrentInstrument.Id)))
+        {
+            IsIntradayDrawerOpen = false;
+            IntradayChart.Clear();
+        }
     }
 
     private bool MatchesSelectedGroup(WatchlistItemViewModel item) => SelectedGroupTab switch
@@ -185,20 +211,30 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void HandleMiniWindowToggled(WatchlistItemViewModel item, bool showInMini)
     {
-        RefreshGroupTabLabels();
-        if (SelectedGroupTab == WatchlistGroupTab.MiniWindow)
-        {
-            ApplyGroupFilter();
-        }
+        LastPendingMiniToggleTask = PersistMiniWindowToggleAsync(item.Id, showInMini);
+    }
 
-        _ = _coordinator.UpdateSettingsAsync(s =>
+    private async Task PersistMiniWindowToggleAsync(InstrumentId id, bool showInMini)
+    {
+        try
         {
-            var existing = s.Watchlist.FirstOrDefault(w => w.Id == item.Id);
-            if (existing is not null)
+            await _coordinator.UpdateSettingsAsync(s =>
             {
-                existing.ShowInMiniWindow = showInMini;
-            }
-        });
+                var existing = s.Watchlist.FirstOrDefault(w => w.Id == id);
+                if (existing is not null)
+                {
+                    existing.ShowInMiniWindow = showInMini;
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            RunOnUi(() =>
+            {
+                SyncFromSettings(_coordinator.Settings);
+                BannerMessage = $"保存悬浮小窗设置失败，已恢复原状态：{ex.Message}";
+            });
+        }
     }
 
     private void OnQuotesUpdated(BatchQuoteResponse response)
@@ -383,6 +419,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void CloseIntradayDrawer()
     {
         IsIntradayDrawerOpen = false;
+        IntradayChart.Clear();
     }
 
     [RelayCommand]
@@ -390,10 +427,21 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (item is null)
             return;
-        await _coordinator.UpdateSettingsAsync(s =>
+        try
         {
-            s.Watchlist.RemoveAll(w => w.Id == item.Id);
-        });
+            await _coordinator.UpdateSettingsAsync(s =>
+            {
+                s.Watchlist.RemoveAll(w => w.Id == item.Id);
+            });
+        }
+        catch (Exception ex)
+        {
+            RunOnUi(() =>
+            {
+                SyncFromSettings(_coordinator.Settings);
+                BannerMessage = $"移除自选失败：{ex.Message}";
+            });
+        }
     }
 
     [RelayCommand]
@@ -423,59 +471,80 @@ public sealed partial class MainViewModel : ObservableObject
         if (item is null)
             return;
 
-        var next = !item.ShowInMiniWindow;
-        await _coordinator.UpdateSettingsAsync(s =>
-        {
-            var existing = s.Watchlist.FirstOrDefault(w => w.Id == item.Id);
-            if (existing is not null)
-            {
-                existing.ShowInMiniWindow = next;
-            }
-        });
+        await PersistMiniWindowToggleAsync(item.Id, !item.ShowInMiniWindow);
     }
 
     [RelayCommand]
-    private async Task MoveItemUpAsync(WatchlistItemViewModel? item)
+    private Task MoveItemUpAsync(WatchlistItemViewModel? item) => MoveItemRelativeAsync(item, -1);
+
+    [RelayCommand]
+    private Task MoveItemDownAsync(WatchlistItemViewModel? item) => MoveItemRelativeAsync(item, +1);
+
+    private async Task MoveItemRelativeAsync(WatchlistItemViewModel? item, int delta)
     {
         if (item is null)
             return;
 
-        var visibleIdx = WatchlistItems.IndexOf(item);
-        if (visibleIdx <= 0)
+        // Read the visual order actually displayed to the user (respecting active DataGrid column sorting)
+        var view = CollectionViewSource.GetDefaultView(WatchlistItems);
+        var hasColumnSort = view is not null && view.SortDescriptions.Count > 0;
+        var visualItems = view is not null
+            ? view.Cast<WatchlistItemViewModel>().ToList()
+            : WatchlistItems.ToList();
+
+        var visualIdx = visualItems.FindIndex(x => x.Id == item.Id);
+        var targetIdx = visualIdx + delta;
+        if (visualIdx < 0 || targetIdx < 0 || targetIdx >= visualItems.Count)
             return;
 
-        var neighborId = WatchlistItems[visibleIdx - 1].Id;
-        await _coordinator.UpdateSettingsAsync(s =>
+        (visualItems[targetIdx], visualItems[visualIdx]) = (visualItems[visualIdx], visualItems[targetIdx]);
+        var desiredVisibleOrder = visualItems.Select(x => x.Id).ToList();
+
+        try
         {
-            var idx = s.Watchlist.FindIndex(w => w.Id == item.Id);
-            var neighborIdx = s.Watchlist.FindIndex(w => w.Id == neighborId);
-            if (idx > 0 && neighborIdx >= 0)
+            await _coordinator.UpdateSettingsAsync(s =>
             {
-                (s.Watchlist[neighborIdx], s.Watchlist[idx]) = (s.Watchlist[idx], s.Watchlist[neighborIdx]);
+                var visibleSet = desiredVisibleOrder.ToHashSet();
+                var slotIndices = new List<int>(desiredVisibleOrder.Count);
+                var byId = new Dictionary<InstrumentId, Instrument>(desiredVisibleOrder.Count);
+
+                for (var i = 0; i < s.Watchlist.Count; i++)
+                {
+                    var w = s.Watchlist[i];
+                    if (visibleSet.Contains(w.Id))
+                    {
+                        slotIndices.Add(i);
+                        byId[w.Id] = w;
+                    }
+                }
+
+                if (slotIndices.Count == desiredVisibleOrder.Count)
+                {
+                    for (var k = 0; k < slotIndices.Count; k++)
+                    {
+                        s.Watchlist[slotIndices[k]] = byId[desiredVisibleOrder[k]];
+                    }
+                }
+            });
+
+            if (hasColumnSort && view is not null)
+            {
+                RunOnUi(() =>
+                {
+                    view.SortDescriptions.Clear();
+                    view.Refresh();
+                    ColumnSortClearRequested?.Invoke();
+                });
             }
-        });
-    }
-
-    [RelayCommand]
-    private async Task MoveItemDownAsync(WatchlistItemViewModel? item)
-    {
-        if (item is null)
-            return;
-
-        var visibleIdx = WatchlistItems.IndexOf(item);
-        if (visibleIdx < 0 || visibleIdx >= WatchlistItems.Count - 1)
-            return;
-
-        var neighborId = WatchlistItems[visibleIdx + 1].Id;
-        await _coordinator.UpdateSettingsAsync(s =>
+        }
+        catch (Exception ex)
         {
-            var idx = s.Watchlist.FindIndex(w => w.Id == item.Id);
-            var neighborIdx = s.Watchlist.FindIndex(w => w.Id == neighborId);
-            if (idx >= 0 && neighborIdx >= 0)
+            RunOnUi(() =>
             {
-                (s.Watchlist[idx], s.Watchlist[neighborIdx]) = (s.Watchlist[neighborIdx], s.Watchlist[idx]);
-            }
-        });
+                SyncFromSettings(_coordinator.Settings);
+                BannerMessage = $"保存排序失败：{ex.Message}";
+            });
+        }
     }
 
     [RelayCommand]

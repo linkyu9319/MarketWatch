@@ -26,6 +26,22 @@ public sealed partial class IntradayChartViewModel : ObservableObject
         _coordinator = coordinator;
     }
 
+    public void Clear()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+
+        CurrentInstrument = null;
+        CurrentSeries = null;
+        IsLoading = false;
+        HasChartData = false;
+        Title = "点击自选标的查看分时走势";
+        Subtitle = "";
+        EmptyOrNoticeText = "在自选列表中单击任意标的以加载当日真实分时曲线。";
+        SeriesChanged?.Invoke(null);
+    }
+
     public async Task LoadForInstrumentAsync(Instrument? instrument)
     {
         _loadCts?.Cancel();

@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using MarketWatch.App.Services;
 using MarketWatch.App.ViewModels;
 using MarketWatch.Core.Models;
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
         Height = _coordinator.Settings.WindowHeight;
 
         _vm.IntradayChart.SeriesChanged += OnIntradaySeriesChanged;
+        _vm.ColumnSortClearRequested += OnColumnSortClearRequested;
         _themeManager.ThemeOrColorsChanged += OnThemeChanged;
         _themeManager.ApplyToWindow(this);
 
@@ -42,13 +45,59 @@ public partial class MainWindow : Window
         IntradayPlot.UserInputProcessor.IsEnabled = false;
     }
 
+    private void OnColumnSortClearRequested()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            WatchlistGrid.Items.SortDescriptions.Clear();
+            foreach (var col in WatchlistGrid.Columns)
+            {
+                col.SortDirection = null;
+            }
+            WatchlistGrid.Items.Refresh();
+        });
+    }
+
+    private void OnWatchlistPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        TryPrepareContextMenuTarget(e.OriginalSource as DependencyObject, isKeyboardInvoked: false);
+    }
+
+    private void OnWatchlistContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        // Mouse right-click: only allow row context menu when clicking an actual row, and always target that row
+        var isKeyboardInvoked = e.CursorLeft < 0 && e.CursorTop < 0;
+        if (!TryPrepareContextMenuTarget(e.OriginalSource as DependencyObject, isKeyboardInvoked))
+        {
+            e.Handled = true;
+        }
+    }
+
+    internal bool TryPrepareContextMenuTarget(DependencyObject? originalSource, bool isKeyboardInvoked)
+    {
+        if (!isKeyboardInvoked)
+        {
+            var row = FindAncestor<DataGridRow>(originalSource);
+            if (row?.Item is WatchlistItemViewModel vm)
+            {
+                row.IsSelected = true;
+                WatchlistGrid.SelectedItem = vm;
+                return true;
+            }
+            return false;
+        }
+
+        return WatchlistGrid.SelectedItem is WatchlistItemViewModel;
+    }
+
     private void OnWatchlistRowClicked(object sender, MouseButtonEventArgs e)
     {
         // Ignore clicks on embedded controls (e.g. mini-window CheckBox), column headers, or scrollbars
         if (IsInsideInteractiveChild(e.OriginalSource as DependencyObject))
             return;
 
-        if (WatchlistGrid.SelectedItem is WatchlistItemViewModel item)
+        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+        if (row?.Item is WatchlistItemViewModel item)
         {
             _vm.InspectIntradayCommand.Execute(item);
         }
@@ -64,9 +113,30 @@ public partial class MainWindow : Window
                 or System.Windows.Controls.Primitives.DataGridColumnHeader
                 or System.Windows.Controls.Primitives.ScrollBar)
                 return true;
-            current = VisualTreeHelper.GetParent(current);
+            current = GetParentObject(current);
         }
         return false;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is T match)
+                return match;
+            current = GetParentObject(current);
+        }
+        return null;
+    }
+
+    private static DependencyObject? GetParentObject(DependencyObject current)
+    {
+        if (current is Visual or Visual3D)
+        {
+            return VisualTreeHelper.GetParent(current);
+        }
+        return LogicalTreeHelper.GetParent(current);
     }
 
     private void OnThemeChanged()
@@ -182,6 +252,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _vm.IntradayChart.SeriesChanged -= OnIntradaySeriesChanged;
+        _vm.ColumnSortClearRequested -= OnColumnSortClearRequested;
         _themeManager.ThemeOrColorsChanged -= OnThemeChanged;
         base.OnClosed(e);
     }
