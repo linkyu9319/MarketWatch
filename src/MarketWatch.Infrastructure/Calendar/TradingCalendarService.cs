@@ -161,7 +161,7 @@ public sealed class TradingCalendarService : ITradingCalendar
     ];
 
     /// <summary>
-    /// Official 2026 HKEX half-day trading dates (morning session only, closes by 12:08 CST).
+    /// Official 2026 HKEX half-day trading dates (morning session + Closing Auction Session random close 12:08–12:10 CST).
     /// </summary>
     private static readonly HashSet<DateOnly> OfficialHkHalfDays2026 =
     [
@@ -178,7 +178,7 @@ public sealed class TradingCalendarService : ITradingCalendar
         return market switch
         {
             Market.US when OfficialUsEarlyClose2026.Contains(localMarketDate) => new TimeOnly(13, 0),
-            Market.HK when OfficialHkHalfDays2026.Contains(localMarketDate) => new TimeOnly(12, 8),
+            Market.HK when OfficialHkHalfDays2026.Contains(localMarketDate) => new TimeOnly(12, 10),
             _ => null
         };
     }

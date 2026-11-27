@@ -28,6 +28,8 @@ public sealed class AppStateCoordinator : IDisposable
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly SemaphoreSlim _schedulerGate = new(1, 1);
     private readonly object _settingsLock = new();
+    private readonly object _migrationLock = new();
+    private List<ReminderTriggerRecord> _pendingDedupMigrations = new();
 
     private AppSettings _settings = DefaultPresets.CreateDefaultSettings();
     private CancellationTokenSource? _loopCts;
@@ -107,14 +109,18 @@ public sealed class AppStateCoordinator : IDisposable
         _scheduler.SeedFromHistory(history.ReminderRecords);
 
         // Migrate any legacy history.json keys (from v1.0.0 / v1.0.1 upgrades) into persistent trigger-state.json
-        // so clearing visible history never breaks restart deduplication.
+        // so clearing visible history never breaks restart deduplication. If trigger-state.json is temporarily locked,
+        // keep startup non-blocking (keys are already in memory) and retry persistence on subsequent ticks / before clear.
         var unmigrated = history.ReminderRecords
             .Where(r => !string.IsNullOrWhiteSpace(r.TriggerKey) && !dedupKeys.Contains(r.TriggerKey))
             .ToList();
         if (unmigrated.Count > 0)
         {
-            await _historyStore.RecordDedupKeysAsync(unmigrated, cancellationToken).ConfigureAwait(false);
-            _logger.Info("History", $"Migrated {unmigrated.Count} legacy trigger dedup keys to trigger-state.json.");
+            lock (_migrationLock)
+            {
+                _pendingDedupMigrations = unmigrated;
+            }
+            await TryFlushPendingDedupMigrationsAsync(cancellationToken).ConfigureAwait(false);
         }
 
         _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items, {Settings.ReminderRules.Count} reminder rules, {dedupKeys.Count + unmigrated.Count} dedup keys.");
@@ -170,6 +176,8 @@ public sealed class AppStateCoordinator : IDisposable
         await _schedulerGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            await TryFlushPendingDedupMigrationsAsync(ct).ConfigureAwait(false);
+
             List<ReminderRule> rulesSnapshot;
             lock (_settingsLock)
             {
@@ -438,8 +446,34 @@ public sealed class AppStateCoordinator : IDisposable
 
     public async Task ClearHistoryAsync(CancellationToken ct = default)
     {
+        await TryFlushPendingDedupMigrationsAsync(ct).ConfigureAwait(false);
         await _historyStore.ClearAsync(ct).ConfigureAwait(false);
         HistoryUpdated?.Invoke();
+    }
+
+    private async Task TryFlushPendingDedupMigrationsAsync(CancellationToken ct)
+    {
+        List<ReminderTriggerRecord> snapshot;
+        lock (_migrationLock)
+        {
+            if (_pendingDedupMigrations.Count == 0)
+                return;
+            snapshot = _pendingDedupMigrations.ToList();
+        }
+
+        try
+        {
+            await _historyStore.RecordDedupKeysAsync(snapshot, ct).ConfigureAwait(false);
+            lock (_migrationLock)
+            {
+                _pendingDedupMigrations.Clear();
+            }
+            _logger.Info("History", $"Migrated {snapshot.Count} legacy trigger dedup keys to trigger-state.json.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Warn("History", $"Deferred legacy dedup migration because trigger-state.json is temporarily unavailable: {ex.Message}");
+        }
     }
 
     public Task ExportSettingsAsync(string targetPath, CancellationToken ct = default) =>

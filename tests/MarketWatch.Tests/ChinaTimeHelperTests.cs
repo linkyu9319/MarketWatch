@@ -44,10 +44,15 @@ public sealed class ChinaTimeHelperTests
         Assert.Equal(new TimeOnly(13, 0), bfEarlyClose);
         Assert.Equal(MarketStatus.AfterHours, ChinaTimeHelper.ComputeMarketStatus(Market.US, blackFriday1400EtUtc, true, bfEarlyClose));
 
-        // 2026-12-24 HK Christmas Eve half-day (closes 12:08 CST) -> at 14:00 CST must be Closed!
-        var hkEve1400CstUtc = new DateTimeOffset(2026, 12, 24, 6, 0, 0, TimeSpan.Zero);
+        // 2026-12-24 HK Christmas Eve half-day (CAS random close 12:08–12:10 CST):
+        // at 12:08:30 CST still Trading; at 12:11:00 and 14:00 CST must be Closed!
         var hkEveClose = calendar.GetEarlyCloseTime(Market.HK, new DateOnly(2026, 12, 24));
-        Assert.Equal(new TimeOnly(12, 8), hkEveClose);
+        Assert.Equal(new TimeOnly(12, 10), hkEveClose);
+        var hkEve120830CstUtc = new DateTimeOffset(2026, 12, 24, 4, 8, 30, TimeSpan.Zero);
+        Assert.Equal(MarketStatus.Trading, ChinaTimeHelper.ComputeMarketStatus(Market.HK, hkEve120830CstUtc, true, hkEveClose));
+        var hkEve121100CstUtc = new DateTimeOffset(2026, 12, 24, 4, 11, 0, TimeSpan.Zero);
+        Assert.Equal(MarketStatus.Closed, ChinaTimeHelper.ComputeMarketStatus(Market.HK, hkEve121100CstUtc, true, hkEveClose));
+        var hkEve1400CstUtc = new DateTimeOffset(2026, 12, 24, 6, 0, 0, TimeSpan.Zero);
         Assert.Equal(MarketStatus.Closed, ChinaTimeHelper.ComputeMarketStatus(Market.HK, hkEve1400CstUtc, true, hkEveClose));
     }
 
