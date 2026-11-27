@@ -1,0 +1,60 @@
+name: Build and Release MarketWatch
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve Version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -match '^v(\d+\.\d+\.\d+)$') {
+            $ver = $Matches[1]
+          } else {
+            $ver = "1.0.0"
+          }
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Restore & Test
+        run: |
+          dotnet restore MarketWatch.sln
+          dotnet test tests/MarketWatch.Tests/MarketWatch.Tests.csproj -c Release --verbosity normal
+
+      - name: Publish Single-File win-x64 EXE
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.version.outputs.VERSION }}"
+          dotnet publish src/MarketWatch.App/MarketWatch.App.csproj `
+            -c Release -r win-x64 --self-contained true `
+            /p:Version=$ver `
+            /p:PublishSingleFile=true `
+            /p:IncludeNativeLibrariesForSelfExtract=true `
+            /p:EnableCompressionInSingleFile=true `
+            /p:DebugType=none /p:DebugSymbols=false `
+            -o publish/win-x64
+          Copy-Item "publish/win-x64/MarketWatch.exe" "publish/MarketWatch-$ver-win-x64.exe" -Force
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: publish/MarketWatch-${{ steps.version.outputs.VERSION }}-win-x64.exe

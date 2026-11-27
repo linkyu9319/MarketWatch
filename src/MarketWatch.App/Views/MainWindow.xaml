@@ -1,0 +1,488 @@
+<Window x:Class="MarketWatch.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+        Title="MarketWatch 桌面盯盘助手"
+        Width="820"
+        Height="530"
+        MinWidth="680"
+        MinHeight="450"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        Topmost="{Binding IsTopMost}"
+        FontFamily="{StaticResource PrimaryFont}"
+        WindowStartupLocation="CenterScreen"
+        Closing="OnWindowClosing"
+        StateChanged="OnWindowStateChanged">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: Modern Top Header (2-line left brand + status avoids clipping at any width) -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource HeaderBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="16,9">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- App Title, Version Update Pill & Connection Status below -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <TextBlock Text="MW" Foreground="White" FontWeight="Bold" FontSize="12.5"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="MarketWatch" FontSize="15" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                            <Button Content="{Binding VersionBadgeText}"
+                                    Command="{Binding OpenUpdatesCommand}"
+                                    Style="{StaticResource SubtleButtonStyle}"
+                                    FontFamily="{StaticResource MonoFont}"
+                                    FontSize="10.5"
+                                    Padding="6,1"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    ToolTip="点击检查 GitHub 最新版本" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,0">
+                            <Ellipse Width="6.5" Height="6.5" Margin="0,0,5,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsConnectionHealthy}" Value="False">
+                                                <Setter Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="{Binding ConnectionStatusText}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Action Toolbar -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="+ 添加"
+                            Command="{Binding OpenSearchCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Padding="10,5"
+                            Margin="0,0,5,0"
+                            ToolTip="搜索并添加港股 / A股 / 美股标的" />
+                    <Button Content="刷新"
+                            Command="{Binding ManualRefreshCommand}"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="8,5"
+                            Margin="0,0,5,0"
+                            ToolTip="立即刷新行情" />
+                    <Button Content="测试提醒"
+                            Command="{Binding TestStrongReminderCommand}"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="8,5"
+                            Margin="0,0,5,0"
+                            ToolTip="静音验证 14:55 强提醒弹窗（右键可测普通提醒）">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="测试普通提醒弹窗" Command="{Binding TestNormalReminderCommand}" />
+                                <MenuItem Header="测试强提醒弹窗（呼吸边框）" Command="{Binding TestStrongReminderCommand}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                    <Button Content="迷你窗"
+                            Command="{Binding ToggleMiniWindowCommand}"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="8,5"
+                            Margin="0,0,5,0"
+                            ToolTip="显示/隐藏桌面悬浮迷你窗口" />
+                    <Button Content="记录"
+                            Command="{Binding OpenHistoryCommand}"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="8,5"
+                            Margin="0,0,5,0"
+                            ToolTip="查看历史提醒与价格预警记录" />
+                    <ToggleButton Content="置顶"
+                                  IsChecked="{Binding IsTopMost, Mode=OneWay}"
+                                  Command="{Binding ToggleTopMostCommand}"
+                                  Style="{StaticResource SubtleToggleButtonStyle}"
+                                  Padding="8,5"
+                                  Margin="0,0,5,0"
+                                  ToolTip="主窗口始终置顶" />
+                    <Button Command="{Binding ToggleThemeCommand}"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="8,5"
+                            Margin="0,0,5,0"
+                            ToolTip="切换深色 / 浅色主题">
+                        <Button.Content>
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="浅色" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDarkTheme}" Value="False">
+                                                <Setter Property="Text" Value="深色" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button.Content>
+                    </Button>
+                    <Button Content="设置"
+                            Command="{Binding OpenSettingsCommand}"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="8,5"
+                            ToolTip="提醒规则、价格预警、日历与配置管理" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Row 1: Optional Warning/Info Banner -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource WarningSubtleBrush}"
+                BorderBrush="{DynamicResource WarningBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="14,7"
+                Visibility="{Binding BannerMessage, Converter={StaticResource StringToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding BannerMessage}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap" />
+                <Button Grid.Column="1"
+                        Content="忽略"
+                        Command="{Binding DismissBannerCommand}"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        Padding="8,2"
+                        Margin="10,0,0,0" />
+            </Grid>
+        </Border>
+
+        <!-- Row 2: Main Watchlist Card -->
+        <Border Grid.Row="2"
+                Margin="12,10,12,8"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                ClipToBounds="True">
+            <DataGrid x:Name="WatchlistGrid"
+                      ItemsSource="{Binding WatchlistItems}"
+                      SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                      Style="{StaticResource ModernDataGridStyle}"
+                      MouseLeftButtonUp="OnWatchlistRowClicked">
+                <DataGrid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="查看当日分时图"
+                                  Command="{Binding InspectIntradayCommand}"
+                                  CommandParameter="{Binding SelectedItem}" />
+                        <MenuItem Header="添加价格 / 涨跌幅预警..."
+                                  Command="{Binding AddPriceAlertForItemCommand}"
+                                  CommandParameter="{Binding SelectedItem}" />
+                        <Separator />
+                        <MenuItem Header="上移"
+                                  Command="{Binding MoveItemUpCommand}"
+                                  CommandParameter="{Binding SelectedItem}" />
+                        <MenuItem Header="下移"
+                                  Command="{Binding MoveItemDownCommand}"
+                                  CommandParameter="{Binding SelectedItem}" />
+                        <MenuItem Header="复制代码"
+                                  Command="{Binding CopyCodeCommand}"
+                                  CommandParameter="{Binding SelectedItem}" />
+                        <Separator />
+                        <MenuItem Header="从自选移除"
+                                  Command="{Binding RemoveWatchlistItemCommand}"
+                                  CommandParameter="{Binding SelectedItem}" />
+                    </ContextMenu>
+                </DataGrid.ContextMenu>
+
+                <DataGrid.Columns>
+                    <!-- Name + Market Badge -->
+                    <DataGridTemplateColumn Header="名称" Width="1.5*" SortMemberPath="Name">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ToolTip="{Binding ErrorTooltip}">
+                                    <Border Background="{DynamicResource AccentSubtleBrush}"
+                                            CornerRadius="4"
+                                            Padding="5,1"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding MarketBadge}"
+                                                   FontSize="10.5"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource AccentBrush}" />
+                                    </Border>
+                                    <TextBlock Text="{Binding Name}"
+                                               FontSize="13.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Symbol Code -->
+                    <DataGridTextColumn Header="代码"
+                                        Binding="{Binding DisplayCode}"
+                                        Width="0.9*"
+                                        SortMemberPath="DisplayCode">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+                                <Setter Property="FontSize" Value="12" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                <Setter Property="VerticalAlignment" Value="Center" />
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+
+                    <!-- Last Price -->
+                    <DataGridTemplateColumn Header="最新价" Width="1.0*" SortMemberPath="SortPrice">
+                        <DataGridTemplateColumn.HeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="{DynamicResource ElevatedBackgroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                <Setter Property="FontSize" Value="11.5" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Padding" Value="10,8" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                <Setter Property="HorizontalContentAlignment" Value="Right" />
+                            </Style>
+                        </DataGridTemplateColumn.HeaderStyle>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding PriceText}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="14"
+                                           FontWeight="Bold"
+                                           Foreground="{Binding DirectionBrush}"
+                                           HorizontalAlignment="Right"
+                                           ToolTip="{Binding ErrorTooltip}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Change% & Change -->
+                    <DataGridTemplateColumn Header="涨跌幅" Width="1.1*" SortMemberPath="SortChangePercent">
+                        <DataGridTemplateColumn.HeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="{DynamicResource ElevatedBackgroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                <Setter Property="FontSize" Value="11.5" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Padding" Value="10,8" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+                                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                <Setter Property="HorizontalContentAlignment" Value="Right" />
+                            </Style>
+                        </DataGridTemplateColumn.HeaderStyle>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel HorizontalAlignment="Right" ToolTip="{Binding ErrorTooltip}">
+                                    <TextBlock Text="{Binding ChangePercentText}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               Foreground="{Binding DirectionBrush}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Text="{Binding ChangeText}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="10.5"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               HorizontalAlignment="Right" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Exchange Quote Time -->
+                    <DataGridTextColumn Header="行情时间"
+                                        Binding="{Binding QuoteTimeText}"
+                                        Width="0.95*"
+                                        SortMemberPath="QuoteTimeText">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+                                <Setter Property="FontSize" Value="11.5" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                <Setter Property="VerticalAlignment" Value="Center" />
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+
+                    <!-- Market Status & Source -->
+                    <DataGridTemplateColumn Header="状态 / 来源" Width="1.15*" SortMemberPath="MarketStatusText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel VerticalAlignment="Center" ToolTip="{Binding ErrorTooltip}">
+                                    <TextBlock Text="{Binding MarketStatusText}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding SourceAndDelayText}"
+                                               FontSize="10.5">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsStaleOrError}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- Row 3: Collapsible P1 Intraday Chart Drawer -->
+        <Border Grid.Row="3"
+                Height="205"
+                Margin="12,0,12,8"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="12,8"
+                Visibility="{Binding IsIntradayDrawerOpen, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding IntradayChart.Title}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding IntradayChart.Subtitle}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="刷新分时"
+                                Command="{Binding IntradayChart.RefreshIntradayCommand}"
+                                Style="{StaticResource SubtleButtonStyle}"
+                                Padding="8,3"
+                                Margin="0,0,6,0" />
+                        <Button Content="收起"
+                                Command="{Binding CloseIntradayDrawerCommand}"
+                                Style="{StaticResource SubtleButtonStyle}"
+                                Padding="8,3" />
+                    </StackPanel>
+                </Grid>
+
+                <Grid Grid.Row="1">
+                    <sp:WpfPlot x:Name="IntradayPlot"
+                                Visibility="{Binding IntradayChart.HasChartData, Converter={StaticResource BoolToVisibility}}" />
+
+                    <Border Background="{DynamicResource ElevatedBackgroundBrush}"
+                            CornerRadius="6"
+                            Visibility="{Binding IntradayChart.HasChartData, Converter={StaticResource InverseBoolToVisibility}}">
+                        <TextBlock Text="{Binding IntradayChart.EmptyOrNoticeText}"
+                                   FontSize="12.5"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Margin="20" />
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Row 4: Bottom Status Bar (Beijing Time, Cutoff Countdown, Next Reminder) -->
+        <Border Grid.Row="4"
+                Background="{DynamicResource HeaderBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="16,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="{Binding BeijingTimeText}"
+                           FontFamily="{StaticResource MonoFont}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" />
+
+                <Border Grid.Column="1"
+                        HorizontalAlignment="Center"
+                        CornerRadius="6"
+                        Padding="10,3">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{DynamicResource ElevatedBackgroundBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsCutoffUrgent}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding CutoffCountdownText}"
+                               FontFamily="{StaticResource MonoFont}"
+                               FontSize="12"
+                               FontWeight="SemiBold">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCutoffUrgent}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Border>
+
+                <TextBlock Grid.Column="2"
+                           Text="{Binding NextReminderText}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

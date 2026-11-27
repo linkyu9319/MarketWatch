@@ -1,0 +1,65 @@
+<Window x:Class="MarketWatch.App.Views.HistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="历史提醒与预警记录"
+        Width="700"
+        Height="480"
+        MinWidth="560"
+        MinHeight="380"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="{StaticResource PrimaryFont}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="{Binding SummaryText}" FontSize="12.5" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="刷新" Command="{Binding LoadCommand}" Style="{StaticResource SubtleButtonStyle}" Margin="0,0,8,0" />
+                <Button Content="清空记录" Command="{Binding ClearHistoryCommand}" Style="{StaticResource SubtleButtonStyle}" />
+            </StackPanel>
+        </DockPanel>
+
+        <TabControl Grid.Row="1">
+            <TabItem Header="定时提醒记录">
+                <Border Margin="0,8,0,0" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                    <DataGrid ItemsSource="{Binding ReminderRecords}" Style="{StaticResource ModernDataGridStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="业务日期" Binding="{Binding BusinessDate, StringFormat='yyyy-MM-dd'}" Width="96" />
+                            <DataGridTextColumn Header="计划时刻" Binding="{Binding ScheduledTime, StringFormat='HH:mm'}" Width="76" />
+                            <DataGridTextColumn Header="实际记录时刻" Binding="{Binding TriggeredAt, StringFormat='HH:mm:ss'}" Width="96" />
+                            <DataGridTextColumn Header="规则名称" Binding="{Binding RuleName}" Width="150" />
+                            <DataGridTextColumn Header="状态" Binding="{Binding Status, Converter={StaticResource EnumDisplay}}" Width="130" />
+                            <DataGridTextColumn Header="说明" Binding="{Binding Note}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </TabItem>
+
+            <TabItem Header="价格预警记录">
+                <Border Margin="0,8,0,0" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                    <DataGrid ItemsSource="{Binding PriceAlertRecords}" Style="{StaticResource ModernDataGridStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="触发时刻" Binding="{Binding TriggeredAt, StringFormat='MM-dd HH:mm:ss'}" Width="125" />
+                            <DataGridTextColumn Header="标的" Binding="{Binding InstrumentName}" Width="140" />
+                            <DataGridTextColumn Header="指标" Binding="{Binding Metric, Converter={StaticResource EnumDisplay}}" Width="95" />
+                            <DataGridTextColumn Header="方向" Binding="{Binding Direction, Converter={StaticResource EnumDisplay}}" Width="85" />
+                            <DataGridTextColumn Header="阈值" Binding="{Binding Threshold}" Width="80" />
+                            <DataGridTextColumn Header="实际值" Binding="{Binding ActualValue}" Width="85" />
+                            <DataGridTextColumn Header="来源" Binding="{Binding Source, Converter={StaticResource EnumDisplay}}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </TabItem>
+        </TabControl>
+
+        <Button Grid.Row="2" Content="关闭" Click="OnCloseClick" Style="{StaticResource SubtleButtonStyle}"
+                HorizontalAlignment="Right" Padding="20,6" Margin="0,12,0,0" />
+    </Grid>
+</Window>

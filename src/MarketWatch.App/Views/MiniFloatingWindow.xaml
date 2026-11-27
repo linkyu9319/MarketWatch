@@ -1,0 +1,133 @@
+<Window x:Class="MarketWatch.App.Views.MiniFloatingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MarketWatch 迷你盯盘"
+        Width="295"
+        SizeToContent="Height"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Opacity="{Binding WindowOpacity}"
+        FontFamily="{StaticResource PrimaryFont}"
+        MouseLeftButtonDown="OnDragWindow"
+        MouseDoubleClick="OnDoubleClickOpenMain"
+        Loaded="OnLoaded">
+
+    <Border Margin="8"
+            Background="{DynamicResource CardBackgroundBrush}"
+            BorderBrush="{DynamicResource BorderStrongBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="12,10">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.38" Color="#000000" />
+        </Border.Effect>
+
+        <StackPanel>
+            <!-- Mini Header -->
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding BeijingTimeText}"
+                               FontFamily="{StaticResource MonoFont}"
+                               FontSize="12"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <Border CornerRadius="4" Padding="6,1" Margin="8,0,0,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{DynamicResource ElevatedBackgroundBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsUrgent}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding CutoffShortText}"
+                                   FontFamily="{StaticResource MonoFont}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsUrgent}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="主窗"
+                            Click="OnOpenMainClick"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="6,2"
+                            FontSize="10.5"
+                            Margin="0,0,4,0" />
+                    <Button Content="✕"
+                            Click="OnHideClick"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Padding="6,2"
+                            FontSize="10.5" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Compact Watchlist Ticker -->
+            <ItemsControl ItemsSource="{Binding CompactItems}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                BorderThickness="0,1,0,0"
+                                Padding="0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="68" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Name}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding PriceText}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="12.5"
+                                           FontWeight="Bold"
+                                           Foreground="{Binding DirectionBrush}"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding ChangePercentText}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding DirectionBrush}"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+</Window>

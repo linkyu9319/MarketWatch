@@ -1,0 +1,35 @@
+<Window x:Class="MarketWatch.App.Views.PriceAlertDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="快速添加价格 / 涨跌幅预警"
+        Width="400"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="{StaticResource PrimaryFont}"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="18">
+        <TextBlock x:Name="TargetText" FontSize="15" FontWeight="Bold" Margin="0,0,0,12" />
+
+        <TextBlock Text="监控指标" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+        <ComboBox x:Name="MetricBox" ItemTemplate="{StaticResource EnumComboItemTemplate}" Margin="0,0,0,10" />
+
+        <TextBlock Text="触发方向" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+        <ComboBox x:Name="DirectionBox" ItemTemplate="{StaticResource EnumComboItemTemplate}" Margin="0,0,0,10" />
+
+        <TextBlock Text="阈值（价格或涨跌幅百分比数值，如 3500 或 -2.0）" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+        <TextBox x:Name="ThresholdBox" Style="{StaticResource ModernTextBoxStyle}" Text="-2.0" Margin="0,0,0,10" />
+
+        <TextBlock Text="冷却时间（分钟）" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+        <TextBox x:Name="CooldownBox" Style="{StaticResource ModernTextBoxStyle}" Text="10" Margin="0,0,0,14" />
+
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource DangerBrush}" FontSize="12" Margin="0,0,0,8" Visibility="Collapsed" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="取消" Click="OnCancel" Style="{StaticResource SubtleButtonStyle}" Padding="16,6" Margin="0,0,8,0" />
+            <Button Content="添加预警" Click="OnConfirm" Style="{StaticResource PrimaryButtonStyle}" Padding="18,6" />
+        </StackPanel>
+    </StackPanel>
+</Window>
