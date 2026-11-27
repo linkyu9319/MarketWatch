@@ -1,8 +1,9 @@
 <Window x:Class="MarketWatch.App.Views.MiniFloatingWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MarketWatch 迷你盯盘"
-        Width="295"
+        Title="青菜盯盘 · 悬浮小窗"
+        Icon="pack://application:,,,/Assets/vegetable.png"
+        Width="305"
         SizeToContent="Height"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -35,6 +36,12 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="pack://application:,,,/Assets/vegetable.png"
+                           Width="15"
+                           Height="15"
+                           Margin="0,0,6,0"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           VerticalAlignment="Center" />
                     <TextBlock Text="{Binding BeijingTimeText}"
                                FontFamily="{StaticResource MonoFont}"
                                FontSize="12"
@@ -85,49 +92,67 @@
             </Grid>
 
             <!-- Compact Watchlist Ticker -->
-            <ItemsControl ItemsSource="{Binding CompactItems}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                BorderThickness="0,1,0,0"
-                                Padding="0,6">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="68" />
-                                </Grid.ColumnDefinitions>
+            <ScrollViewer MaxHeight="340"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Visibility="{Binding HasCompactItems, Converter={StaticResource BoolToVisibility}}">
+                <ItemsControl ItemsSource="{Binding CompactItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="0,6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="68" />
+                                    </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0"
-                                           Text="{Binding Name}"
-                                           FontSize="12"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Name}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
 
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding PriceText}"
-                                           FontFamily="{StaticResource MonoFont}"
-                                           FontSize="12.5"
-                                           FontWeight="Bold"
-                                           Foreground="{Binding DirectionBrush}"
-                                           Margin="8,0,0,0"
-                                           VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding PriceText}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="12.5"
+                                               FontWeight="Bold"
+                                               Foreground="{Binding DirectionBrush}"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center" />
 
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding ChangePercentText}"
-                                           FontFamily="{StaticResource MonoFont}"
-                                           FontSize="12"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding DirectionBrush}"
-                                           HorizontalAlignment="Right"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding ChangePercentText}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding DirectionBrush}"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Empty state when user unchecked all instruments -->
+            <Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="0,10,0,2"
+                    Visibility="{Binding HasCompactItems, Converter={StaticResource InverseBoolToVisibility}}">
+                <TextBlock Text="暂未勾选小窗标的，请在主界面勾选「小窗」"
+                           FontSize="11.5"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+            </Border>
         </StackPanel>
     </Border>
 </Window>

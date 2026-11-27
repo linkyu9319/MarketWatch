@@ -8,16 +8,40 @@ using MarketWatch.Core.Services;
 
 namespace MarketWatch.App.ViewModels;
 
+public enum WatchlistGroupTab
+{
+    All,
+    HK,
+    CN,
+    US,
+    MiniWindow
+}
+
 public sealed partial class MainViewModel : ObservableObject
 {
     private readonly AppStateCoordinator _coordinator;
     private readonly IClock _clock;
     private readonly ThemeManager _themeManager;
+    private readonly List<WatchlistItemViewModel> _allWatchlistItems = new();
     private bool _calendarNoticeDismissed;
     private DateOnly _calendarNoticeDismissedDate;
 
     public ObservableCollection<WatchlistItemViewModel> WatchlistItems { get; } = new();
     public IntradayChartViewModel IntradayChart { get; }
+
+    [ObservableProperty] private WatchlistGroupTab _selectedGroupTab = WatchlistGroupTab.All;
+    [ObservableProperty] private bool _isAllTabSelected = true;
+    [ObservableProperty] private bool _isHkTabSelected;
+    [ObservableProperty] private bool _isCnTabSelected;
+    [ObservableProperty] private bool _isUsTabSelected;
+    [ObservableProperty] private bool _isMiniTabSelected;
+    [ObservableProperty] private string _allTabLabel = "全部 (0)";
+    [ObservableProperty] private string _hkTabLabel = "港股 (0)";
+    [ObservableProperty] private string _cnTabLabel = "沪深 (0)";
+    [ObservableProperty] private string _usTabLabel = "美股 (0)";
+    [ObservableProperty] private string _miniTabLabel = "小窗 (0)";
+    [ObservableProperty] private bool _isCurrentGroupEmpty;
+    [ObservableProperty] private string _emptyGroupHint = "";
 
     [ObservableProperty] private WatchlistItemViewModel? _selectedItem;
     [ObservableProperty] private bool _isIntradayDrawerOpen;
@@ -85,24 +109,95 @@ public sealed partial class MainViewModel : ObservableObject
             var existingQuotes = _coordinator.GetAllLatestQuotes();
             var prevSelectedId = SelectedItem?.Id;
 
-            WatchlistItems.Clear();
+            _allWatchlistItems.Clear();
             foreach (var inst in settings.Watchlist)
             {
-                var vm = new WatchlistItemViewModel(inst, _themeManager);
+                var vm = new WatchlistItemViewModel(inst, _themeManager, HandleMiniWindowToggled);
                 if (existingQuotes.TryGetValue(inst.Id, out var q))
                 {
                     vm.ApplyQuote(q);
                 }
-                WatchlistItems.Add(vm);
+                _allWatchlistItems.Add(vm);
             }
 
-            if (prevSelectedId.HasValue)
-            {
-                SelectedItem = WatchlistItems.FirstOrDefault(x => x.Id == prevSelectedId.Value);
-            }
+            RefreshGroupTabLabels();
+            ApplyGroupFilter(prevSelectedId);
 
             UpdateCalendarNotice();
             UpdateClockDisplays(_clock.UtcNow);
+        });
+    }
+
+    private void RefreshGroupTabLabels()
+    {
+        var total = _allWatchlistItems.Count;
+        var hk = _allWatchlistItems.Count(x => x.Id.Market == Market.HK);
+        var cn = _allWatchlistItems.Count(x => x.Id.Market == Market.CN);
+        var us = _allWatchlistItems.Count(x => x.Id.Market == Market.US);
+        var mini = _allWatchlistItems.Count(x => x.ShowInMiniWindow);
+
+        AllTabLabel = $"全部 ({total})";
+        HkTabLabel = $"港股 ({hk})";
+        CnTabLabel = $"沪深 ({cn})";
+        UsTabLabel = $"美股 ({us})";
+        MiniTabLabel = $"小窗 ({mini})";
+    }
+
+    private void ApplyGroupFilter(InstrumentId? preserveSelectionId = null)
+    {
+        var targetId = preserveSelectionId ?? SelectedItem?.Id;
+        var filtered = _allWatchlistItems.Where(MatchesSelectedGroup).ToList();
+
+        WatchlistItems.Clear();
+        foreach (var item in filtered)
+        {
+            WatchlistItems.Add(item);
+        }
+
+        IsCurrentGroupEmpty = WatchlistItems.Count == 0;
+        EmptyGroupHint = SelectedGroupTab switch
+        {
+            WatchlistGroupTab.MiniWindow => "暂未勾选小窗标的，请在「全部」或对应市场中勾选右侧「小窗」复选框。",
+            WatchlistGroupTab.HK => "当前港股分组暂无自选标的，可点击右上角「+ 添加」搜索添加。",
+            WatchlistGroupTab.CN => "当前沪深分组暂无自选标的，可点击右上角「+ 添加」搜索添加。",
+            WatchlistGroupTab.US => "当前美股分组暂无自选标的，可点击右上角「+ 添加」搜索添加。",
+            _ => "自选列表为空，可点击右上角「+ 添加」添加港股、沪深或美股标的。"
+        };
+
+        if (targetId.HasValue)
+        {
+            SelectedItem = WatchlistItems.FirstOrDefault(x => x.Id == targetId.Value);
+        }
+        else if (SelectedItem is not null && !WatchlistItems.Contains(SelectedItem))
+        {
+            SelectedItem = null;
+        }
+    }
+
+    private bool MatchesSelectedGroup(WatchlistItemViewModel item) => SelectedGroupTab switch
+    {
+        WatchlistGroupTab.HK => item.Id.Market == Market.HK,
+        WatchlistGroupTab.CN => item.Id.Market == Market.CN,
+        WatchlistGroupTab.US => item.Id.Market == Market.US,
+        WatchlistGroupTab.MiniWindow => item.ShowInMiniWindow,
+        _ => true
+    };
+
+    private void HandleMiniWindowToggled(WatchlistItemViewModel item, bool showInMini)
+    {
+        RefreshGroupTabLabels();
+        if (SelectedGroupTab == WatchlistGroupTab.MiniWindow)
+        {
+            ApplyGroupFilter();
+        }
+
+        _ = _coordinator.UpdateSettingsAsync(s =>
+        {
+            var existing = s.Watchlist.FirstOrDefault(w => w.Id == item.Id);
+            if (existing is not null)
+            {
+                existing.ShowInMiniWindow = showInMini;
+            }
         });
     }
 
@@ -111,7 +206,7 @@ public sealed partial class MainViewModel : ObservableObject
         RunOnUi(() =>
         {
             IsRefreshing = false;
-            foreach (var item in WatchlistItems)
+            foreach (var item in _allWatchlistItems)
             {
                 if (response.Quotes.TryGetValue(item.Id, out var quote))
                 {
@@ -151,7 +246,7 @@ public sealed partial class MainViewModel : ObservableObject
         RunOnUi(() =>
         {
             IsDarkTheme = _themeManager.CurrentTheme == ThemeMode.Dark;
-            foreach (var item in WatchlistItems)
+            foreach (var item in _allWatchlistItems)
             {
                 item.RefreshColors();
             }
@@ -302,16 +397,61 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void SelectGroupTab(string? tabKey)
+    {
+        var next = tabKey?.Trim().ToUpperInvariant() switch
+        {
+            "HK" => WatchlistGroupTab.HK,
+            "CN" => WatchlistGroupTab.CN,
+            "US" => WatchlistGroupTab.US,
+            "MINI" or "MINIWINDOW" => WatchlistGroupTab.MiniWindow,
+            _ => WatchlistGroupTab.All
+        };
+
+        SelectedGroupTab = next;
+        IsAllTabSelected = next == WatchlistGroupTab.All;
+        IsHkTabSelected = next == WatchlistGroupTab.HK;
+        IsCnTabSelected = next == WatchlistGroupTab.CN;
+        IsUsTabSelected = next == WatchlistGroupTab.US;
+        IsMiniTabSelected = next == WatchlistGroupTab.MiniWindow;
+        ApplyGroupFilter();
+    }
+
+    [RelayCommand]
+    private async Task ToggleMiniWindowMembershipAsync(WatchlistItemViewModel? item)
+    {
+        if (item is null)
+            return;
+
+        var next = !item.ShowInMiniWindow;
+        await _coordinator.UpdateSettingsAsync(s =>
+        {
+            var existing = s.Watchlist.FirstOrDefault(w => w.Id == item.Id);
+            if (existing is not null)
+            {
+                existing.ShowInMiniWindow = next;
+            }
+        });
+    }
+
+    [RelayCommand]
     private async Task MoveItemUpAsync(WatchlistItemViewModel? item)
     {
         if (item is null)
             return;
+
+        var visibleIdx = WatchlistItems.IndexOf(item);
+        if (visibleIdx <= 0)
+            return;
+
+        var neighborId = WatchlistItems[visibleIdx - 1].Id;
         await _coordinator.UpdateSettingsAsync(s =>
         {
             var idx = s.Watchlist.FindIndex(w => w.Id == item.Id);
-            if (idx > 0)
+            var neighborIdx = s.Watchlist.FindIndex(w => w.Id == neighborId);
+            if (idx > 0 && neighborIdx >= 0)
             {
-                (s.Watchlist[idx - 1], s.Watchlist[idx]) = (s.Watchlist[idx], s.Watchlist[idx - 1]);
+                (s.Watchlist[neighborIdx], s.Watchlist[idx]) = (s.Watchlist[idx], s.Watchlist[neighborIdx]);
             }
         });
     }
@@ -321,12 +461,19 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (item is null)
             return;
+
+        var visibleIdx = WatchlistItems.IndexOf(item);
+        if (visibleIdx < 0 || visibleIdx >= WatchlistItems.Count - 1)
+            return;
+
+        var neighborId = WatchlistItems[visibleIdx + 1].Id;
         await _coordinator.UpdateSettingsAsync(s =>
         {
             var idx = s.Watchlist.FindIndex(w => w.Id == item.Id);
-            if (idx >= 0 && idx < s.Watchlist.Count - 1)
+            var neighborIdx = s.Watchlist.FindIndex(w => w.Id == neighborId);
+            if (idx >= 0 && neighborIdx >= 0)
             {
-                (s.Watchlist[idx], s.Watchlist[idx + 1]) = (s.Watchlist[idx + 1], s.Watchlist[idx]);
+                (s.Watchlist[idx], s.Watchlist[neighborIdx]) = (s.Watchlist[neighborIdx], s.Watchlist[idx]);
             }
         });
     }
@@ -363,7 +510,7 @@ public sealed partial class MainViewModel : ObservableObject
     private static void RunOnUi(Action action)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
+        if (dispatcher is null || dispatcher.CheckAccess() || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished || !dispatcher.Thread.IsAlive)
             action();
         else
             dispatcher.BeginInvoke(action);

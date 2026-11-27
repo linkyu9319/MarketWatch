@@ -22,7 +22,7 @@ public sealed class TrayIconService : IDisposable
         _icon = CreateCrispAppIcon();
 
         var menu = new WinForms.ContextMenuStrip();
-        menu.Items.Add("打开 MarketWatch", null, (_, _) => OpenMainRequested?.Invoke());
+        menu.Items.Add("打开青菜盯盘", null, (_, _) => OpenMainRequested?.Invoke());
         menu.Items.Add("悬浮迷你窗口", null, (_, _) => ToggleMiniWindowRequested?.Invoke());
         menu.Items.Add(new WinForms.ToolStripSeparator());
         menu.Items.Add("静音测试提醒（普通）", null, (_, _) => TestNormalReminderRequested?.Invoke());
@@ -35,7 +35,7 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon = new WinForms.NotifyIcon
         {
             Icon = _icon,
-            Text = "MarketWatch 桌面盯盘助手",
+            Text = "青菜盯盘",
             ContextMenuStrip = menu,
             Visible = true
         };

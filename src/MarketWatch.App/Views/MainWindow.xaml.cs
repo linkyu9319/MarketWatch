@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using MarketWatch.App.Services;
 using MarketWatch.App.ViewModels;
 using MarketWatch.Core.Models;
@@ -42,10 +44,29 @@ public partial class MainWindow : Window
 
     private void OnWatchlistRowClicked(object sender, MouseButtonEventArgs e)
     {
+        // Ignore clicks on embedded controls (e.g. mini-window CheckBox), column headers, or scrollbars
+        if (IsInsideInteractiveChild(e.OriginalSource as DependencyObject))
+            return;
+
         if (WatchlistGrid.SelectedItem is WatchlistItemViewModel item)
         {
             _vm.InspectIntradayCommand.Execute(item);
         }
+    }
+
+    private static bool IsInsideInteractiveChild(DependencyObject? source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is System.Windows.Controls.CheckBox
+                or System.Windows.Controls.Primitives.ButtonBase
+                or System.Windows.Controls.Primitives.DataGridColumnHeader
+                or System.Windows.Controls.Primitives.ScrollBar)
+                return true;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return false;
     }
 
     private void OnThemeChanged()

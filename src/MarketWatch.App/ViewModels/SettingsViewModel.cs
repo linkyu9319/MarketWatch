@@ -411,7 +411,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            Title = "导出 MarketWatch 配置",
+            Title = "导出青菜盯盘配置",
             Filter = "JSON 配置文件 (*.json)|*.json",
             FileName = $"MarketWatch-config-{DateTime.Now:yyyyMMdd}.json"
         };
@@ -427,7 +427,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "导入 MarketWatch 配置",
+            Title = "导入青菜盯盘配置",
             Filter = "JSON 配置文件 (*.json)|*.json"
         };
         if (dlg.ShowDialog() == true)

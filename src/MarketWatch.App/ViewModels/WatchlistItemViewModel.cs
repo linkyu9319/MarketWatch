@@ -9,6 +9,8 @@ namespace MarketWatch.App.ViewModels;
 public sealed partial class WatchlistItemViewModel : ObservableObject
 {
     private readonly ThemeManager _themeManager;
+    private readonly Action<WatchlistItemViewModel, bool>? _onMiniWindowToggled;
+    private bool _suppressMiniToggleCallback;
 
     public Instrument Instrument { get; }
     public InstrumentId Id => Instrument.Id;
@@ -16,6 +18,7 @@ public sealed partial class WatchlistItemViewModel : ObservableObject
     [ObservableProperty] private string _name;
     [ObservableProperty] private string _displayCode;
     [ObservableProperty] private string _marketBadge;
+    [ObservableProperty] private bool _showInMiniWindow;
     [ObservableProperty] private string _priceText = "--";
     [ObservableProperty] private string _changeText = "--";
     [ObservableProperty] private string _changePercentText = "--";
@@ -30,20 +33,48 @@ public sealed partial class WatchlistItemViewModel : ObservableObject
     public decimal? SortChangePercent => LatestQuote?.ChangePercent;
     public Quote? LatestQuote { get; private set; }
 
-    public WatchlistItemViewModel(Instrument instrument, ThemeManager themeManager)
+    public WatchlistItemViewModel(
+        Instrument instrument,
+        ThemeManager themeManager,
+        Action<WatchlistItemViewModel, bool>? onMiniWindowToggled = null)
     {
         Instrument = instrument;
         _themeManager = themeManager;
+        _onMiniWindowToggled = onMiniWindowToggled;
         _name = instrument.Name;
         _displayCode = instrument.DisplayCode;
+        _showInMiniWindow = instrument.ShowInMiniWindow;
         _marketBadge = instrument.Id.Market switch
         {
             Market.HK => "港",
-            Market.CN => "A",
+            Market.CN => "沪深",
             Market.US => "美",
             _ => ""
         };
         _directionBrush = themeManager.GetDirectionBrush(null);
+    }
+
+    partial void OnShowInMiniWindowChanged(bool value)
+    {
+        if (_suppressMiniToggleCallback)
+            return;
+
+        Instrument.ShowInMiniWindow = value;
+        _onMiniWindowToggled?.Invoke(this, value);
+    }
+
+    public void SyncShowInMiniWindow(bool value)
+    {
+        _suppressMiniToggleCallback = true;
+        try
+        {
+            Instrument.ShowInMiniWindow = value;
+            ShowInMiniWindow = value;
+        }
+        finally
+        {
+            _suppressMiniToggleCallback = false;
+        }
     }
 
     public void ApplyQuote(Quote quote)

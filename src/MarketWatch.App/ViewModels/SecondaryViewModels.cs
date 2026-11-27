@@ -79,6 +79,7 @@ public sealed partial class MiniWindowViewModel : ObservableObject
     [ObservableProperty] private string _cutoffShortText = "距15:00 --:--";
     [ObservableProperty] private bool _isUrgent;
     [ObservableProperty] private double _windowOpacity = 0.94;
+    [ObservableProperty] private bool _hasCompactItems;
 
     public MiniWindowViewModel(AppStateCoordinator coordinator, IClock clock, ThemeManager themeManager)
     {
@@ -102,13 +103,14 @@ public sealed partial class MiniWindowViewModel : ObservableObject
             WindowOpacity = settings.MiniWindowOpacity;
             var latest = _coordinator.GetAllLatestQuotes();
             CompactItems.Clear();
-            foreach (var inst in settings.Watchlist.Take(6))
+            foreach (var inst in settings.Watchlist.Where(w => w.ShowInMiniWindow))
             {
                 var vm = new WatchlistItemViewModel(inst, _themeManager);
                 if (latest.TryGetValue(inst.Id, out var q))
                     vm.ApplyQuote(q);
                 CompactItems.Add(vm);
             }
+            HasCompactItems = CompactItems.Count > 0;
         });
     }
 
@@ -163,7 +165,7 @@ public sealed partial class MiniWindowViewModel : ObservableObject
     private static void RunOnUi(Action action)
     {
         var d = System.Windows.Application.Current?.Dispatcher;
-        if (d is null || d.CheckAccess()) action();
+        if (d is null || d.CheckAccess() || d.HasShutdownStarted || d.HasShutdownFinished || !d.Thread.IsAlive) action();
         else d.BeginInvoke(action);
     }
 }

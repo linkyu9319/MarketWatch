@@ -9,6 +9,7 @@ using AppThemeMode = MarketWatch.Core.Models.ThemeMode;
 
 namespace MarketWatch.Tests;
 
+[Collection("WpfUi")]
 public sealed class ThemeManagerTests
 {
     [Fact]
@@ -129,6 +130,10 @@ public sealed class ThemeManagerTests
             catch (Exception ex)
             {
                 threadError = ex;
+            }
+            finally
+            {
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
             }
         });
 

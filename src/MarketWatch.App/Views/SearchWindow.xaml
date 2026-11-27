@@ -49,7 +49,7 @@
                     Style="{StaticResource SubtleButtonStyle}" Padding="10,3" Margin="0,0,6,0" />
             <Button Content="港股" Command="{Binding FilterPresetsCommand}" CommandParameter="HK"
                     Style="{StaticResource SubtleButtonStyle}" Padding="10,3" Margin="0,0,6,0" />
-            <Button Content="A股" Command="{Binding FilterPresetsCommand}" CommandParameter="CN"
+            <Button Content="沪深" Command="{Binding FilterPresetsCommand}" CommandParameter="CN"
                     Style="{StaticResource SubtleButtonStyle}" Padding="10,3" Margin="0,0,6,0" />
             <Button Content="美股" Command="{Binding FilterPresetsCommand}" CommandParameter="US"
                     Style="{StaticResource SubtleButtonStyle}" Padding="10,3" />
@@ -140,12 +140,16 @@
             </ListBox>
         </Border>
 
-        <Button Grid.Row="4"
-                Content="完成"
-                Click="OnCloseClick"
-                Style="{StaticResource SubtleButtonStyle}"
-                HorizontalAlignment="Right"
-                Padding="20,6"
-                Margin="0,12,0,0" />
+        <DockPanel Grid.Row="4" Margin="0,12,0,0">
+            <Button DockPanel.Dock="Right"
+                    Content="完成"
+                    Click="OnCloseClick"
+                    Style="{StaticResource SubtleButtonStyle}"
+                    Padding="20,6" />
+            <CheckBox Content="添加时同步显示到悬浮小窗"
+                      IsChecked="{Binding AddToMiniWindow}"
+                      FontSize="12"
+                      VerticalAlignment="Center" />
+        </DockPanel>
     </Grid>
 </Window>

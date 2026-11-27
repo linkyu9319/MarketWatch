@@ -35,7 +35,8 @@ public sealed partial class SearchDialogViewModel : ObservableObject
 
     [ObservableProperty] private string _queryText = "";
     [ObservableProperty] private bool _isSearching;
-    [ObservableProperty] private string _statusText = "支持按代码、中文名称或拼音搜索港股 / A股 / 美股，或直接从下方常用标的添加。";
+    [ObservableProperty] private bool _addToMiniWindow;
+    [ObservableProperty] private string _statusText = "支持按代码、中文名称或拼音搜索港股 / 沪深 / 美股，或直接从下方常用标的添加。";
 
     public ObservableCollection<SearchResultRowViewModel> Results { get; } = new();
 
@@ -151,18 +152,22 @@ public sealed partial class SearchDialogViewModel : ObservableObject
         {
             if (s.Watchlist.All(w => w.Id != row.Instrument.Id))
             {
-                s.Watchlist.Add(row.Instrument.Clone());
+                var inst = row.Instrument.Clone();
+                inst.ShowInMiniWindow = AddToMiniWindow;
+                s.Watchlist.Add(inst);
             }
         }, triggerImmediateRefresh: true);
 
         row.IsAlreadyAdded = true;
-        StatusText = $"已添加 {row.Name} ({row.DisplayCode}) 到自选列表";
+        StatusText = AddToMiniWindow
+            ? $"已添加 {row.Name} ({row.DisplayCode}) 到自选列表与悬浮小窗"
+            : $"已添加 {row.Name} ({row.DisplayCode}) 到自选列表";
     }
 
     private static SearchResultItem ToSearchItem(Instrument inst, string source) => new()
     {
         Instrument = inst,
-        MarketLabel = inst.Id.Market switch { Market.HK => "港股", Market.CN => "A股", Market.US => "美股", _ => "" },
+        MarketLabel = inst.Id.Market switch { Market.HK => "港股", Market.CN => "沪深", Market.US => "美股", _ => "" },
         SecurityTypeLabel = inst.Id.AssetType switch { AssetType.Index => "指数", AssetType.Etf => "ETF", _ => "股票" },
         Source = source
     };

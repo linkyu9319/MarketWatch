@@ -14,6 +14,12 @@ public sealed class Instrument
     public string? TencentCodeHint { get; set; }
     public string? EastmoneySecIdHint { get; set; }
 
+    /// <summary>
+    /// Whether this instrument is displayed in the Mini Floating Window.
+    /// Defaults to true for built-in presets and backward compatibility with existing configs.
+    /// </summary>
+    public bool ShowInMiniWindow { get; set; } = true;
+
     public Instrument Clone() => new()
     {
         Id = Id,
@@ -21,7 +27,8 @@ public sealed class Instrument
         DisplayCode = DisplayCode,
         Currency = Currency,
         TencentCodeHint = TencentCodeHint,
-        EastmoneySecIdHint = EastmoneySecIdHint
+        EastmoneySecIdHint = EastmoneySecIdHint,
+        ShowInMiniWindow = ShowInMiniWindow
     };
 }
 

@@ -94,8 +94,8 @@ public partial class App : System.Windows.Application
             if (updateReady is null)
             {
                 System.Windows.MessageBox.Show(
-                    $"MarketWatch 启动失败：{ex.Message}",
-                    "MarketWatch",
+                    $"青菜盯盘启动失败：{ex.Message}",
+                    "青菜盯盘",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -193,7 +193,7 @@ public partial class App : System.Windows.Application
 
         if (!_coordinator.Settings.ShowQuoteInTrayTooltip)
         {
-            _trayService.UpdateTooltip("MarketWatch 桌面盯盘助手");
+            _trayService.UpdateTooltip("青菜盯盘");
             return;
         }
 
@@ -209,11 +209,11 @@ public partial class App : System.Windows.Application
         {
             var pct = quote.ChangePercent.HasValue ? $"{(quote.ChangePercent > 0 ? "+" : "")}{quote.ChangePercent:0.00}%" : "--";
             var price = quote.LastPrice!.Value < 10m ? quote.LastPrice.Value.ToString("0.000") : quote.LastPrice.Value.ToString("N2");
-            _trayService.UpdateTooltip($"MarketWatch | {quote.Name} {price} ({pct})");
+            _trayService.UpdateTooltip($"青菜盯盘 | {quote.Name} {price} ({pct})");
         }
         else
         {
-            _trayService.UpdateTooltip("MarketWatch 桌面盯盘助手");
+            _trayService.UpdateTooltip("青菜盯盘");
         }
     }
 
@@ -271,7 +271,7 @@ public partial class App : System.Windows.Application
             {
                 System.Windows.MessageBox.Show(
                     $"启动更新替换脚本失败：{ex.Message}",
-                    "MarketWatch 更新",
+                    "青菜盯盘 · 软件更新",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
