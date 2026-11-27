@@ -5,6 +5,9 @@ public sealed class ReminderRule
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string Name { get; set; } = "恒生科技基金交易提醒";
     public InstrumentId? TargetInstrumentId { get; set; }
+    public string? TargetDisplayCode { get; set; }
+    public string? TargetTencentCodeHint { get; set; }
+    public string? TargetEastmoneySecIdHint { get; set; }
     public TimeOnly TriggerTime { get; set; } = new(14, 30);
     public TimeOnly CutoffTime { get; set; } = new(15, 0);
     public RepeatMode RepeatMode { get; set; } = RepeatMode.FundTradingDays;
@@ -18,6 +21,9 @@ public sealed class ReminderRule
         Id = Id,
         Name = Name,
         TargetInstrumentId = TargetInstrumentId,
+        TargetDisplayCode = TargetDisplayCode,
+        TargetTencentCodeHint = TargetTencentCodeHint,
+        TargetEastmoneySecIdHint = TargetEastmoneySecIdHint,
         TriggerTime = TriggerTime,
         CutoffTime = CutoffTime,
         RepeatMode = RepeatMode,
@@ -59,6 +65,9 @@ public sealed class PriceAlertRule
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public InstrumentId InstrumentId { get; set; }
     public string InstrumentName { get; set; } = string.Empty;
+    public string? DisplayCode { get; set; }
+    public string? TencentCodeHint { get; set; }
+    public string? EastmoneySecIdHint { get; set; }
     public AlertMetric Metric { get; set; } = AlertMetric.ChangePercent;
     public AlertDirection Direction { get; set; } = AlertDirection.CrossBelow;
     public decimal Threshold { get; set; } = -2.0m;
@@ -70,6 +79,9 @@ public sealed class PriceAlertRule
         Id = Id,
         InstrumentId = InstrumentId,
         InstrumentName = InstrumentName,
+        DisplayCode = DisplayCode,
+        TencentCodeHint = TencentCodeHint,
+        EastmoneySecIdHint = EastmoneySecIdHint,
         Metric = Metric,
         Direction = Direction,
         Threshold = Threshold,

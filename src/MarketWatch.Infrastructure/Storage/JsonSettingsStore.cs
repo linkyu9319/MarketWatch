@@ -99,6 +99,10 @@ public sealed class JsonSettingsStore : ISettingsStore
         var imported = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions)
             ?? throw new InvalidDataException("导入的配置文件内容为空或格式无效。");
         imported.Normalize();
+        if (!ReminderRuleValidator.ValidateRules(imported.ReminderRules, out var ruleError))
+        {
+            throw new InvalidDataException(ruleError ?? "导入的配置文件包含无效提醒时间。");
+        }
         await SaveAsync(imported, cancellationToken).ConfigureAwait(false);
         return imported;
     }

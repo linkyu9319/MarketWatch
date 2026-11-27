@@ -76,6 +76,7 @@ public interface ITradingCalendar
     void UpdateCustomOverrides(IEnumerable<DateOnly> customHolidays, IEnumerable<DateOnly> customOpenDays);
     CalendarDayEvaluation EvaluateFundTradingDay(DateOnly chinaDate, RepeatMode repeatMode);
     bool IsMarketTradingDay(Market market, DateOnly localMarketDate);
+    TimeOnly? GetEarlyCloseTime(Market market, DateOnly localMarketDate) => null;
 }
 
 public sealed record SettingsLoadResult(

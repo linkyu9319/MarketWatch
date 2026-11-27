@@ -23,6 +23,9 @@ public sealed class PriceAlertEvaluator
     {
         if (!quote.HasPrice)
             return false;
+        // Require a valid exchange quote timestamp so freshness and provider monotonicity are always verifiable
+        if (!quote.QuoteTime.HasValue)
+            return false;
         if (!string.IsNullOrWhiteSpace(quote.Error))
             return false;
         if (quote.DelayStatus == DelayStatus.Stale)
@@ -33,7 +36,7 @@ public sealed class PriceAlertEvaluator
             return false;
 
         // During active trading, reject severely stale exchange timestamps
-        if (quote.MarketStatus == MarketStatus.Trading && quote.QuoteTime.HasValue)
+        if (quote.MarketStatus == MarketStatus.Trading)
         {
             if (utcNow - quote.QuoteTime.Value > TimeSpan.FromMinutes(20))
                 return false;

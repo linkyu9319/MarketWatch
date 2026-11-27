@@ -18,6 +18,16 @@ public sealed partial class EditableReminderRuleViewModel : ObservableObject
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _targetInstrumentKey = "";
+    public string? TargetDisplayCode { get; set; }
+    public string? TargetTencentCodeHint { get; set; }
+    public string? TargetEastmoneySecIdHint { get; set; }
+
+    partial void OnTargetInstrumentKeyChanged(string value)
+    {
+        TargetDisplayCode = null;
+        TargetTencentCodeHint = null;
+        TargetEastmoneySecIdHint = null;
+    }
     [ObservableProperty] private string _triggerHour = "14";
     [ObservableProperty] private string _triggerMinute = "30";
     [ObservableProperty] private string _cutoffHour = "15";
@@ -31,6 +41,9 @@ public sealed partial class EditableReminderRuleViewModel : ObservableObject
         Id = m.Id,
         Name = m.Name,
         TargetInstrumentKey = m.TargetInstrumentId?.CanonicalKey ?? "",
+        TargetDisplayCode = m.TargetDisplayCode,
+        TargetTencentCodeHint = m.TargetTencentCodeHint,
+        TargetEastmoneySecIdHint = m.TargetEastmoneySecIdHint,
         TriggerHour = m.TriggerTime.Hour.ToString("00"),
         TriggerMinute = m.TriggerTime.Minute.ToString("00"),
         CutoffHour = m.CutoffTime.Hour.ToString("00"),
@@ -53,6 +66,9 @@ public sealed partial class EditableReminderRuleViewModel : ObservableObject
             Id = Id,
             Name = string.IsNullOrWhiteSpace(Name) ? "定时交易提醒" : Name.Trim(),
             TargetInstrumentId = targetId,
+            TargetDisplayCode = TargetDisplayCode,
+            TargetTencentCodeHint = TargetTencentCodeHint,
+            TargetEastmoneySecIdHint = TargetEastmoneySecIdHint,
             TriggerTime = new TimeOnly(th, tm),
             CutoffTime = new TimeOnly(ch, cm),
             RepeatMode = RepeatMode,
@@ -69,6 +85,9 @@ public sealed partial class EditablePriceAlertViewModel : ObservableObject
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     [ObservableProperty] private InstrumentId _instrumentId = DefaultPresets.HstechId;
     [ObservableProperty] private string _instrumentName = "恒生科技指数";
+    public string? DisplayCode { get; set; }
+    public string? TencentCodeHint { get; set; }
+    public string? EastmoneySecIdHint { get; set; }
     [ObservableProperty] private AlertMetric _metric = AlertMetric.ChangePercent;
     [ObservableProperty] private AlertDirection _direction = AlertDirection.CrossBelow;
     [ObservableProperty] private decimal _threshold = -2.0m;
@@ -83,6 +102,9 @@ public sealed partial class EditablePriceAlertViewModel : ObservableObject
         Id = m.Id,
         InstrumentId = m.InstrumentId,
         InstrumentName = m.InstrumentName,
+        DisplayCode = m.DisplayCode,
+        TencentCodeHint = m.TencentCodeHint,
+        EastmoneySecIdHint = m.EastmoneySecIdHint,
         Metric = m.Metric,
         Direction = m.Direction,
         Threshold = m.Threshold,
@@ -95,6 +117,9 @@ public sealed partial class EditablePriceAlertViewModel : ObservableObject
         Id = Id,
         InstrumentId = InstrumentId,
         InstrumentName = InstrumentName,
+        DisplayCode = DisplayCode,
+        TencentCodeHint = TencentCodeHint,
+        EastmoneySecIdHint = EastmoneySecIdHint,
         Metric = Metric,
         Direction = Direction,
         Threshold = Threshold,
@@ -291,6 +316,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             InstrumentId = NewAlertInstrument.Id,
             InstrumentName = NewAlertInstrument.Name,
+            DisplayCode = NewAlertInstrument.DisplayCode,
+            TencentCodeHint = NewAlertInstrument.TencentCodeHint,
+            EastmoneySecIdHint = NewAlertInstrument.EastmoneySecIdHint,
             Metric = NewAlertMetric,
             Direction = NewAlertDirection,
             Threshold = threshold,
@@ -424,13 +452,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         try
         {
             var builtRules = ReminderRules.Select(r => r.ToModel(EnableFullScreenOverlayForStrong, EnableReminderSound)).ToList();
-            foreach (var rule in builtRules)
+            if (!ReminderRuleValidator.ValidateRules(builtRules, out var ruleError))
             {
-                if (rule.TriggerTime >= rule.CutoffTime)
-                {
-                    StatusMessage = $"提醒规则「{rule.Name}」的触发时间 ({rule.TriggerTime:HH:mm}) 必须早于截止时间 ({rule.CutoffTime:HH:mm})，请调整后再保存。";
-                    return;
-                }
+                StatusMessage = ruleError ?? "提醒规则时间设置无效，请检查。";
+                return;
             }
 
             var holidays = CustomHolidayDates

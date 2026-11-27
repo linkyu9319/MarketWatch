@@ -36,6 +36,19 @@ public sealed class ChinaTimeHelperTests
         var isHkOpen = calendar.IsMarketTradingDay(Market.HK, ChinaTimeHelper.GetMarketLocalDate(Market.HK, hkGoodFridayUtc));
         Assert.False(isHkOpen);
         Assert.Equal(MarketStatus.Closed, ChinaTimeHelper.ComputeMarketStatus(Market.HK, hkGoodFridayUtc, isHkOpen));
+
+        // 2026-11-27 US Black Friday early close at 13:00 EST -> at 14:00 EST (19:00 UTC) must NOT be Trading!
+        var blackFriday1400EtUtc = new DateTimeOffset(2026, 11, 27, 19, 0, 0, TimeSpan.Zero);
+        var bfDate = ChinaTimeHelper.GetMarketLocalDate(Market.US, blackFriday1400EtUtc);
+        var bfEarlyClose = calendar.GetEarlyCloseTime(Market.US, bfDate);
+        Assert.Equal(new TimeOnly(13, 0), bfEarlyClose);
+        Assert.Equal(MarketStatus.AfterHours, ChinaTimeHelper.ComputeMarketStatus(Market.US, blackFriday1400EtUtc, true, bfEarlyClose));
+
+        // 2026-12-24 HK Christmas Eve half-day (closes 12:08 CST) -> at 14:00 CST must be Closed!
+        var hkEve1400CstUtc = new DateTimeOffset(2026, 12, 24, 6, 0, 0, TimeSpan.Zero);
+        var hkEveClose = calendar.GetEarlyCloseTime(Market.HK, new DateOnly(2026, 12, 24));
+        Assert.Equal(new TimeOnly(12, 8), hkEveClose);
+        Assert.Equal(MarketStatus.Closed, ChinaTimeHelper.ComputeMarketStatus(Market.HK, hkEve1400CstUtc, true, hkEveClose));
     }
 
     [Fact]

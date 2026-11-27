@@ -188,6 +188,30 @@ public sealed class ProviderParsingTests
         Assert.Equal("100.NDX100", found[1].Instrument.EastmoneySecIdHint);
     }
 
+    [Fact]
+    public void EastmoneySecId_PreservesSearchExchangeHintForNyseStockAfterWatchlistRemoval()
+    {
+        // NYSE stock BABA uses 106.BABA on Eastmoney (not default NASDAQ 105.BABA)
+        var savedAlert = new PriceAlertRule
+        {
+            InstrumentId = new InstrumentId(Market.US, AssetType.Stock, "BABA"),
+            InstrumentName = "阿里巴巴",
+            DisplayCode = "BABA",
+            TencentCodeHint = "usBABA",
+            EastmoneySecIdHint = "106.BABA"
+        };
+        var reconstructed = new Instrument
+        {
+            Id = savedAlert.InstrumentId,
+            Name = savedAlert.InstrumentName,
+            DisplayCode = savedAlert.DisplayCode ?? savedAlert.InstrumentId.Code,
+            TencentCodeHint = savedAlert.TencentCodeHint,
+            EastmoneySecIdHint = savedAlert.EastmoneySecIdHint
+        };
+        Assert.Equal("106.BABA", EastmoneyQuoteProvider.ResolveEastmoneySecId(reconstructed));
+        Assert.Equal("usBABA", TencentQuoteProvider.ResolveTencentCode(reconstructed));
+    }
+
     private sealed class StubQuoteProvider : IQuoteProvider
     {
         public string Name { get; }

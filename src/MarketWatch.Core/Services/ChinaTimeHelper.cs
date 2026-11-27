@@ -60,9 +60,13 @@ public static class ChinaTimeHelper
         };
 
     /// <summary>
-    /// Computes standard exchange session status using the market's local timezone (including US DST).
+    /// Computes standard exchange session status using the market's local timezone (including US DST and official early closures).
     /// </summary>
-    public static MarketStatus ComputeMarketStatus(Market market, DateTimeOffset utcNow, bool isMarketTradingDay)
+    public static MarketStatus ComputeMarketStatus(
+        Market market,
+        DateTimeOffset utcNow,
+        bool isMarketTradingDay,
+        TimeOnly? earlyCloseTime = null)
     {
         if (!isMarketTradingDay)
             return MarketStatus.Closed;
@@ -71,11 +75,14 @@ public static class ChinaTimeHelper
         {
             var et = ToUsEasternTime(utcNow);
             var t = TimeOnly.FromDateTime(et.DateTime);
+            var regularClose = earlyCloseTime ?? new TimeOnly(16, 0);
+            var afterHoursEnd = earlyCloseTime.HasValue ? regularClose.AddHours(4) : new TimeOnly(20, 0);
+
             if (t >= new TimeOnly(4, 0) && t < new TimeOnly(9, 30))
                 return MarketStatus.PreMarket;
-            if (t >= new TimeOnly(9, 30) && t <= new TimeOnly(16, 0))
+            if (t >= new TimeOnly(9, 30) && t <= regularClose)
                 return MarketStatus.Trading;
-            if (t > new TimeOnly(16, 0) && t <= new TimeOnly(20, 0))
+            if (t > regularClose && t <= afterHoursEnd)
                 return MarketStatus.AfterHours;
             return MarketStatus.Closed;
         }
@@ -87,6 +94,15 @@ public static class ChinaTimeHelper
         {
             if (ct >= new TimeOnly(9, 0) && ct < new TimeOnly(9, 30))
                 return MarketStatus.PreMarket;
+
+            // Half-day eves (e.g. LNY/Christmas/NY Eve): morning session only, closed after 12:08
+            if (earlyCloseTime.HasValue)
+            {
+                if (ct >= new TimeOnly(9, 30) && ct <= earlyCloseTime.Value)
+                    return MarketStatus.Trading;
+                return MarketStatus.Closed;
+            }
+
             if (ct >= new TimeOnly(9, 30) && ct < new TimeOnly(12, 0))
                 return MarketStatus.Trading;
             if (ct >= new TimeOnly(12, 0) && ct < new TimeOnly(13, 0))

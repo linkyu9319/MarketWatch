@@ -40,6 +40,9 @@ public partial class PriceAlertDialog : Window
         {
             InstrumentId = _instrument.Id,
             InstrumentName = _instrument.Name,
+            DisplayCode = _instrument.DisplayCode,
+            TencentCodeHint = _instrument.TencentCodeHint,
+            EastmoneySecIdHint = _instrument.EastmoneySecIdHint,
             Metric = (AlertMetric)MetricBox.SelectedItem,
             Direction = (AlertDirection)DirectionBox.SelectedItem,
             Threshold = threshold,

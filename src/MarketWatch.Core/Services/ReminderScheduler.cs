@@ -27,8 +27,10 @@ public sealed class ReminderScheduler
     private readonly HashSet<string> _processedTriggerKeys = new(StringComparer.Ordinal);
     private readonly List<PendingSnooze> _pendingSnoozes = new();
     private readonly object _sync = new();
+    private DateOnly? _earliestUnsettledDate;
 
     private static readonly TimeSpan OnTimeGraceWindow = TimeSpan.FromSeconds(75);
+    private const int MaxBackfillDays = 7;
 
     private sealed record PendingSnooze(
         ReminderRule Rule,
@@ -85,20 +87,63 @@ public sealed class ReminderScheduler
     {
         lock (_sync)
         {
-            // While desktop is locked, defer evaluation so rules are not prematurely marked triggered
-            // on an unseen lock screen; unlocking will immediately run catch-up or post-cutoff miss logic.
-            if (isSessionLocked)
-            {
-                return new SchedulerTickResult(Array.Empty<ScheduledReminderEvent>(), Array.Empty<ReminderTriggerRecord>());
-            }
-
             var utcNow = _clock.UtcNow;
             var chinaNow = ChinaTimeHelper.ToChinaTime(utcNow);
             var today = DateOnly.FromDateTime(chinaNow.DateTime);
             var nowTime = TimeOnly.FromDateTime(chinaNow.DateTime);
 
+            // While desktop is locked, defer evaluation so rules are not prematurely marked triggered
+            // on an unseen lock screen; record the earliest locked date so cross-day unlocks settle missed days.
+            if (isSessionLocked)
+            {
+                if (!_earliestUnsettledDate.HasValue || today < _earliestUnsettledDate.Value)
+                {
+                    _earliestUnsettledDate = today;
+                }
+                return new SchedulerTickResult(Array.Empty<ScheduledReminderEvent>(), Array.Empty<ReminderTriggerRecord>());
+            }
+
             var popups = new List<ScheduledReminderEvent>();
             var records = new List<ReminderTriggerRecord>();
+
+            // 0. Settle any past business dates missed across overnight lock/sleep (e.g., locked Friday -> unlocked Saturday)
+            if (_earliestUnsettledDate.HasValue && _earliestUnsettledDate.Value < today)
+            {
+                var startDate = _earliestUnsettledDate.Value;
+                var minAllowed = today.AddDays(-MaxBackfillDays);
+                if (startDate < minAllowed)
+                    startDate = minAllowed;
+
+                for (var pastDate = startDate; pastDate < today; pastDate = pastDate.AddDays(1))
+                {
+                    foreach (var rule in rules)
+                    {
+                        if (!rule.IsEnabled)
+                            continue;
+                        var pastEval = _calendar.EvaluateFundTradingDay(pastDate, rule.RepeatMode);
+                        if (!pastEval.IsTradingDay)
+                            continue;
+
+                        var pastKey = BuildTriggerKey(rule.Id, pastDate, rule.TriggerTime);
+                        if (_processedTriggerKeys.Contains(pastKey))
+                            continue;
+
+                        _processedTriggerKeys.Add(pastKey);
+                        records.Add(new ReminderTriggerRecord
+                        {
+                            TriggerKey = pastKey,
+                            RuleId = rule.Id,
+                            RuleName = rule.Name,
+                            BusinessDate = pastDate,
+                            ScheduledTime = rule.TriggerTime,
+                            TriggeredAt = chinaNow,
+                            Status = ReminderTriggerStatus.MissedAfterCutoff,
+                            Note = $"跨日解锁/恢复，已错过 {pastDate:yyyy-MM-dd} {rule.TriggerTime:HH:mm} 提醒（已过当日截止）"
+                        });
+                    }
+                }
+            }
+            _earliestUnsettledDate = today;
 
             // 1. Evaluate matured snoozes (if already past cutoff, record miss only and NEVER show stale order popup)
             for (var i = _pendingSnoozes.Count - 1; i >= 0; i--)

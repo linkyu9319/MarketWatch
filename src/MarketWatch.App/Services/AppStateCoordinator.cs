@@ -95,6 +95,7 @@ public sealed class AppStateCoordinator : IDisposable
             _settings = loadResult.Settings;
             // Sync auto-start display with actual registry if needed
             _settings.AutoStartEnabled = _autoStartService.IsEnabled();
+            EnrichRuleHintsLocked();
         }
 
         ApplySettingsSideEffects(Settings);
@@ -105,7 +106,18 @@ public sealed class AppStateCoordinator : IDisposable
         var history = await _historyStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         _scheduler.SeedFromHistory(history.ReminderRecords);
 
-        _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items, {Settings.ReminderRules.Count} reminder rules, {dedupKeys.Count} dedup keys.");
+        // Migrate any legacy history.json keys (from v1.0.0 / v1.0.1 upgrades) into persistent trigger-state.json
+        // so clearing visible history never breaks restart deduplication.
+        var unmigrated = history.ReminderRecords
+            .Where(r => !string.IsNullOrWhiteSpace(r.TriggerKey) && !dedupKeys.Contains(r.TriggerKey))
+            .ToList();
+        if (unmigrated.Count > 0)
+        {
+            await _historyStore.RecordDedupKeysAsync(unmigrated, cancellationToken).ConfigureAwait(false);
+            _logger.Info("History", $"Migrated {unmigrated.Count} legacy trigger dedup keys to trigger-state.json.");
+        }
+
+        _logger.Info("App", $"Initialized with {Settings.Watchlist.Count} watchlist items, {Settings.ReminderRules.Count} reminder rules, {dedupKeys.Count + unmigrated.Count} dedup keys.");
     }
 
     public void StartBackgroundLoops()
@@ -377,8 +389,11 @@ public sealed class AppStateCoordinator : IDisposable
         AppSettings updated;
         lock (_settingsLock)
         {
+            // Snapshot provider hints onto existing rules BEFORE mutator potentially deletes items from Watchlist
+            EnrichRuleHintsLocked();
             mutator(_settings);
             _settings.Normalize();
+            EnrichRuleHintsLocked();
             updated = _settings;
         }
 
@@ -446,6 +461,39 @@ public sealed class AppStateCoordinator : IDisposable
         _calendar.UpdateCustomOverrides(s.CustomHolidayDates, s.CustomOpenDates);
     }
 
+    private void EnrichRuleHintsLocked()
+    {
+        var knownById = new Dictionary<InstrumentId, Instrument>();
+        foreach (var c in DefaultPresets.CreateFullCatalog())
+            knownById[c.Id] = c;
+        foreach (var w in _settings.Watchlist)
+            knownById[w.Id] = w;
+
+        foreach (var rule in _settings.ReminderRules)
+        {
+            if (rule.TargetInstrumentId.HasValue && knownById.TryGetValue(rule.TargetInstrumentId.Value, out var inst))
+            {
+                rule.TargetDisplayCode ??= inst.DisplayCode;
+                if (!string.IsNullOrWhiteSpace(inst.TencentCodeHint))
+                    rule.TargetTencentCodeHint = inst.TencentCodeHint;
+                if (!string.IsNullOrWhiteSpace(inst.EastmoneySecIdHint))
+                    rule.TargetEastmoneySecIdHint = inst.EastmoneySecIdHint;
+            }
+        }
+
+        foreach (var alert in _settings.PriceAlerts)
+        {
+            if (knownById.TryGetValue(alert.InstrumentId, out var inst))
+            {
+                alert.DisplayCode ??= inst.DisplayCode;
+                if (!string.IsNullOrWhiteSpace(inst.TencentCodeHint))
+                    alert.TencentCodeHint = inst.TencentCodeHint;
+                if (!string.IsNullOrWhiteSpace(inst.EastmoneySecIdHint))
+                    alert.EastmoneySecIdHint = inst.EastmoneySecIdHint;
+            }
+        }
+    }
+
     private List<Instrument> BuildRequiredInstrumentsLocked()
     {
         var byId = new Dictionary<InstrumentId, Instrument>();
@@ -456,36 +504,55 @@ public sealed class AppStateCoordinator : IDisposable
 
         var catalog = DefaultPresets.CreateFullCatalog();
 
-        // Keep polling instruments referenced by enabled reminder rules even if removed from Watchlist
+        // Keep polling instruments referenced by enabled reminder rules even if removed from Watchlist,
+        // preserving search-resolved exchange hints (e.g., Eastmoney "106.BABA").
         foreach (var rule in _settings.ReminderRules.Where(r => r.IsEnabled && r.TargetInstrumentId.HasValue))
         {
             var id = rule.TargetInstrumentId!.Value;
             if (!byId.ContainsKey(id))
             {
                 var known = catalog.FirstOrDefault(c => c.Id == id);
-                byId[id] = known?.Clone() ?? CreateFallbackInstrument(id, id.Code);
+                byId[id] = known?.Clone() ?? CreateFallbackInstrument(
+                    id,
+                    id.Code,
+                    rule.TargetDisplayCode,
+                    rule.TargetTencentCodeHint,
+                    rule.TargetEastmoneySecIdHint);
             }
         }
 
-        // Keep polling instruments referenced by enabled price alert rules even if removed from Watchlist
+        // Keep polling instruments referenced by enabled price alert rules even if removed from Watchlist,
+        // preserving search-resolved exchange hints (e.g., Eastmoney "106.BABA").
         foreach (var alert in _settings.PriceAlerts.Where(a => a.IsEnabled))
         {
             if (!byId.ContainsKey(alert.InstrumentId))
             {
                 var known = catalog.FirstOrDefault(c => c.Id == alert.InstrumentId);
-                byId[alert.InstrumentId] = known?.Clone() ?? CreateFallbackInstrument(alert.InstrumentId, alert.InstrumentName);
+                byId[alert.InstrumentId] = known?.Clone() ?? CreateFallbackInstrument(
+                    alert.InstrumentId,
+                    alert.InstrumentName,
+                    alert.DisplayCode,
+                    alert.TencentCodeHint,
+                    alert.EastmoneySecIdHint);
             }
         }
 
         return byId.Values.ToList();
     }
 
-    private static Instrument CreateFallbackInstrument(InstrumentId id, string? name) => new()
+    private static Instrument CreateFallbackInstrument(
+        InstrumentId id,
+        string? name,
+        string? displayCode,
+        string? tencentHint,
+        string? eastmoneyHint) => new()
     {
         Id = id,
         Name = string.IsNullOrWhiteSpace(name) ? id.Code : name,
-        DisplayCode = id.Code,
-        Currency = ChinaTimeHelper.GetDefaultCurrency(id.Market)
+        DisplayCode = string.IsNullOrWhiteSpace(displayCode) ? id.Code : displayCode,
+        Currency = ChinaTimeHelper.GetDefaultCurrency(id.Market),
+        TencentCodeHint = tencentHint,
+        EastmoneySecIdHint = eastmoneyHint
     };
 
     public void Dispose()

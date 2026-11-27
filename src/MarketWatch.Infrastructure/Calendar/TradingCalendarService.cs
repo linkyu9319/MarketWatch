@@ -151,6 +151,38 @@ public sealed class TradingCalendarService : ITradingCalendar
             $"日期 {chinaDate:yyyy-MM-dd} 超出内置 2026 年交易所休市表范围，已回退至工作日提醒");
     }
 
+    /// <summary>
+    /// Official 2026 NYSE / NASDAQ early close dates (regular trading closes at 13:00 ET).
+    /// </summary>
+    private static readonly HashSet<DateOnly> OfficialUsEarlyClose2026 =
+    [
+        new(2026, 11, 27), // Day after Thanksgiving (Black Friday)
+        new(2026, 12, 24)  // Christmas Eve
+    ];
+
+    /// <summary>
+    /// Official 2026 HKEX half-day trading dates (morning session only, closes by 12:08 CST).
+    /// </summary>
+    private static readonly HashSet<DateOnly> OfficialHkHalfDays2026 =
+    [
+        new(2026, 2, 16),  // Eve of Lunar New Year
+        new(2026, 12, 24), // Eve of Christmas Day
+        new(2026, 12, 31)  // Eve of New Year
+    ];
+
+    public TimeOnly? GetEarlyCloseTime(Market market, DateOnly localMarketDate)
+    {
+        if (localMarketDate < VerifiedStart || localMarketDate > VerifiedEnd)
+            return null;
+
+        return market switch
+        {
+            Market.US when OfficialUsEarlyClose2026.Contains(localMarketDate) => new TimeOnly(13, 0),
+            Market.HK when OfficialHkHalfDays2026.Contains(localMarketDate) => new TimeOnly(12, 8),
+            _ => null
+        };
+    }
+
     public bool IsMarketTradingDay(Market market, DateOnly localMarketDate)
     {
         if (localMarketDate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)

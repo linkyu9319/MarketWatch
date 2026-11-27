@@ -88,6 +88,48 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Contains(rec.TriggerKey, dedupKeys);
     }
 
+    [Fact]
+    public async Task ImportConfig_RejectsInvalidReminderRuleWhereTriggerNotBeforeCutoff()
+    {
+        var store = new JsonSettingsStore(new NullLogger(), _tempDir);
+        var settings = DefaultPresets.CreateDefaultSettings();
+        settings.ReminderRules[0].TriggerTime = new TimeOnly(15, 5);
+        settings.ReminderRules[0].CutoffTime = new TimeOnly(15, 0);
+
+        var badFile = Path.Combine(_tempDir, "invalid-rule.json");
+        await store.ExportAsync(settings, badFile);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ImportAsync(badFile));
+    }
+
+    [Fact]
+    public async Task LegacyHistoryOnlyUpgrade_MigratesKeysToDedupStoreBeforeClear()
+    {
+        var historyStore = new JsonHistoryStore(new NullLogger(), _tempDir);
+        var rec = new ReminderTriggerRecord
+        {
+            TriggerKey = "hstech-1430|2026-11-27|14:30",
+            RuleId = "hstech-1430",
+            RuleName = "恒生科技基金交易提醒",
+            BusinessDate = new DateOnly(2026, 11, 27),
+            ScheduledTime = new TimeOnly(14, 30),
+            TriggeredAt = DateTimeOffset.UtcNow,
+            Status = ReminderTriggerStatus.Triggered
+        };
+
+        // Simulate legacy v1.0.0/v1.0.1 state: ONLY history.json exists (trigger-state.json does not)
+        await historyStore.AppendReminderRecordAsync(rec);
+        Assert.Empty(await historyStore.LoadDedupKeysAsync());
+
+        // Simulate startup migration
+        var legacy = await historyStore.LoadAsync();
+        await historyStore.RecordDedupKeysAsync(legacy.ReminderRecords);
+
+        // User clears history -> migrated dedup key MUST survive!
+        await historyStore.ClearAsync();
+        Assert.Contains(rec.TriggerKey, await historyStore.LoadDedupKeysAsync());
+    }
+
     public void Dispose()
     {
         try

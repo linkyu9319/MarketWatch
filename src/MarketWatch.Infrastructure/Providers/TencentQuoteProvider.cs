@@ -215,7 +215,8 @@ public sealed partial class TencentQuoteProvider : IQuoteProvider
 
         var localDate = ChinaTimeHelper.GetMarketLocalDate(inst.Id.Market, receivedAt);
         var isTradingDay = calendar.IsMarketTradingDay(inst.Id.Market, localDate);
-        var marketStatus = ChinaTimeHelper.ComputeMarketStatus(inst.Id.Market, receivedAt, isTradingDay);
+        var earlyClose = calendar.GetEarlyCloseTime(inst.Id.Market, localDate);
+        var marketStatus = ChinaTimeHelper.ComputeMarketStatus(inst.Id.Market, receivedAt, isTradingDay, earlyClose);
         var delayStatus = InferDelayStatus(marketStatus, quoteTime, receivedAt);
 
         return new Quote

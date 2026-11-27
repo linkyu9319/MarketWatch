@@ -145,4 +145,52 @@ public sealed class PriceAlertEvaluatorTests
         };
         Assert.Empty(eval.Evaluate([rule], new Dictionary<InstrumentId, Quote> { [rule.InstrumentId] = qOlder }, t1));
     }
+
+    [Fact]
+    public void FirstQuoteMissingExchangeQuoteTime_IsRejectedAndCannotCauseFalseAlert()
+    {
+        var eval = new PriceAlertEvaluator();
+        var rule = new PriceAlertRule
+        {
+            Id = "r-missing-qt",
+            InstrumentId = DefaultPresets.HstechId,
+            InstrumentName = "恒生科技指数",
+            Metric = AlertMetric.Price,
+            Direction = AlertDirection.CrossBelow,
+            Threshold = 3450m,
+            CooldownMinutes = 1,
+            IsEnabled = true
+        };
+
+        var t0 = new DateTimeOffset(2026, 11, 27, 1, 35, 0, TimeSpan.Zero);
+        // First quote has NO exchange QuoteTime -> MUST NOT seed LastObservedValue!
+        var missingQt = new Quote
+        {
+            InstrumentId = DefaultPresets.HstechId,
+            Name = "恒生科技指数",
+            LastPrice = 3480m,
+            QuoteTime = null,
+            ReceivedAt = t0,
+            Source = "Unknown",
+            MarketStatus = MarketStatus.Trading,
+            DelayStatus = DelayStatus.Unknown
+        };
+        Assert.Empty(eval.Evaluate([rule], new Dictionary<InstrumentId, Quote> { [rule.InstrumentId] = missingQt }, t0));
+
+        // Second quote arrives with valid QuoteTime at 3417 (below 3450) -> since Tick 1 was rejected,
+        // Tick 2 only establishes baseline (NeedsRearm = true), MUST NOT false-trigger!
+        var t1 = t0.AddSeconds(10);
+        var validDelayed = new Quote
+        {
+            InstrumentId = DefaultPresets.HstechId,
+            Name = "恒生科技指数",
+            LastPrice = 3417m,
+            QuoteTime = t0.AddMinutes(-15),
+            ReceivedAt = t1,
+            Source = "Tencent",
+            MarketStatus = MarketStatus.Trading,
+            DelayStatus = DelayStatus.Delayed
+        };
+        Assert.Empty(eval.Evaluate([rule], new Dictionary<InstrumentId, Quote> { [rule.InstrumentId] = validDelayed }, t1));
+    }
 }

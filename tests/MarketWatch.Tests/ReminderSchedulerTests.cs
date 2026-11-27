@@ -203,6 +203,28 @@ public sealed class ReminderSchedulerTests
     }
 
     [Fact]
+    public void LockedFromFridayToSaturday_SettlesFridaysMissedRecordsWithoutPopups()
+    {
+        // Friday 14:29 locked -> misses Friday's 14:30, 14:45, 14:55 -> unlocks Saturday 09:00
+        var clock = new FakeClock(Cst(2026, 11, 27, 14, 29, 0));
+        var scheduler = new ReminderScheduler(clock, new TradingCalendarService());
+        var rules = DefaultPresets.CreateDefaultReminderRules();
+
+        Assert.Empty(scheduler.EvaluateTick(rules, isSessionLocked: true).RecordsToPersist);
+
+        clock.UtcNow = Cst(2026, 11, 28, 9, 0, 0); // Saturday morning unlock
+        var unlockedSat = scheduler.EvaluateTick(rules, isSessionLocked: false);
+
+        Assert.Empty(unlockedSat.PopupsToShow);
+        Assert.Equal(3, unlockedSat.RecordsToPersist.Count);
+        Assert.All(unlockedSat.RecordsToPersist, r =>
+        {
+            Assert.Equal(new DateOnly(2026, 11, 27), r.BusinessDate);
+            Assert.Equal(ReminderTriggerStatus.MissedAfterCutoff, r.Status);
+        });
+    }
+
+    [Fact]
     public void HolidayAndUnknownCalendarRange_SkipsOfficialHoliday_AndMarksUnverifiedFundCalendar()
     {
         var calendar = new TradingCalendarService();

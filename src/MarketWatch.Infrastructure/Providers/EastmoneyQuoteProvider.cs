@@ -167,7 +167,8 @@ public sealed class EastmoneyQuoteProvider : IQuoteProvider
 
                 var localDate = ChinaTimeHelper.GetMarketLocalDate(inst.Id.Market, receivedAt);
                 var isTradingDay = calendar.IsMarketTradingDay(inst.Id.Market, localDate);
-                var marketStatus = ChinaTimeHelper.ComputeMarketStatus(inst.Id.Market, receivedAt, isTradingDay);
+                var earlyClose = calendar.GetEarlyCloseTime(inst.Id.Market, localDate);
+                var marketStatus = ChinaTimeHelper.ComputeMarketStatus(inst.Id.Market, receivedAt, isTradingDay, earlyClose);
                 var delayStatus = lastPrice.HasValue
                     ? TencentQuoteProvider.InferDelayStatus(marketStatus, quoteTime, receivedAt)
                     : DelayStatus.Unknown;
